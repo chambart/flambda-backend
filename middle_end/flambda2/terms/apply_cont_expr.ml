@@ -273,6 +273,13 @@ let no_args t =
   | [] -> true
   | _::_ -> false
 
+let is_raise t =
+  match t.trap_action with
+  | Some (Pop { exn_handler; _ }) ->
+    Continuation.equal t.k exn_handler
+  | Some (Push _) | None ->
+    false
+
 let is_goto t =
   no_args t && Option.is_none (trap_action t)
 
