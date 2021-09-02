@@ -116,6 +116,10 @@ let rebuild_one_continuation_handler cont ~at_unit_toplevel
                parameter is the exception bucket.  Then this hack can be
                removed. *)
             if !first && is_exn_handler then begin
+              (* If this argument is actually unused, the apply_conts is updated
+                 accordingly in simplify_apply_cont. Apply_cont_rewrite can't at
+                 the moment represent cannot represents this transformation, so
+                 it has to be done manualy *)
               first := false;
               true
             end else begin
