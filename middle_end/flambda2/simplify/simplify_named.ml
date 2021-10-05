@@ -276,10 +276,10 @@ let simplify_named0 dacc (bound_pattern : Bound_pattern.t) (named : Named.t)
         ~init:(dacc, []) ~f:create_lifted_constant
     in
     let dacc =
-      List.fold_left
-        (fun dacc lifted_constant ->
+      List.fold_right
+        (fun lifted_constant dacc ->
            DA.add_lifted_constant dacc lifted_constant)
-        dacc lifted_constants
+        lifted_constants dacc
     in
     (* We don't need to return any bindings; [Simplify_expr.simplify_let] will
        create the "let symbol" binding when it sees the lifted constant. *)
