@@ -42,11 +42,11 @@ val remove_unreachable : t -> reachable_names:Name_occurrences.t -> t
 
 val iter_code : t -> f:(Code.t -> unit) -> unit
 
-val fold
-   : t
-  -> init:'a
-  -> f:('a -> Code_id.t -> Flambda.Code.t -> 'a)
-  -> 'a
+(* val fold
+ *    : t
+ *   -> init:'a
+ *   -> f:('a -> Code_id.t -> Code.t -> 'a)
+ *   -> 'a *)
 
 val fold_for_cmx
    : t
@@ -65,4 +65,5 @@ val associate_with_loaded_cmx_file
   -> read_flambda_section_from_cmx_file:(index:int -> Obj.t)
   -> code_sections_map:int Code_id.Map.t
   -> used_closure_vars:Var_within_closure.Set.t
+  -> original_compilation_unit:Compilation_unit.t
   -> t
