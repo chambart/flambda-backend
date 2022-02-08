@@ -25,6 +25,14 @@ type error =
 
 exception Error of error
 
+let default_ui_export_info =
+  if Config.flambda then
+    Cmx_format.Flambda1 Export_info.empty
+  else if Config.flambda2 then
+    Cmx_format.Flambda2
+  else
+    Cmx_format.Clambda Clambda.Value_unknown
+
 let read_info name =
   let filename =
     try

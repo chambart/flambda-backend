@@ -50,8 +50,8 @@ let imported_sets_of_closures_table =
    [Cmx_format.unit_infos]). *)
 
 type section_contents =
-  | Closure of Clambda.value_approximation
-  | Flambda1 of Export_info.t
+  (* | Closure
+   * | Flambda1 *)
   | Flambda2 of Obj.t
 
 module CstMap =
@@ -83,6 +83,14 @@ let exported_constants = Hashtbl.create 17
 
 let merged_environment = ref Export_info.empty
 
+let default_ui_export_info =
+  if Config.flambda then
+    Cmx_format.Flambda1 Export_info.empty
+  else if Config.flambda2 then
+    Cmx_format.Flambda2
+  else
+    Cmx_format.Clambda Value_unknown
+
 let current_unit =
   { ui_name = "";
     ui_symbol = "";
@@ -93,6 +101,7 @@ let current_unit =
     ui_apply_fun = [];
     ui_send_fun = [];
     ui_force_link = false;
+    ui_export_info = default_ui_export_info;
     ui_section_toc = [];
     ui_channel = None;
     ui_sections = [| |];
@@ -344,6 +353,11 @@ let get_global_info global_ident = (
   end
 )
 
+let get_global_info' id =
+  match get_global_info id with
+  | None -> None
+  | Some ui -> Some ui.ui_export_info
+
 let cache_unit_info ui =
   Hashtbl.add global_infos_table ui.ui_name (Some ui)
 
@@ -351,18 +365,9 @@ let cache_unit_info ui =
 
 let get_clambda_approx ui =
   assert(not Config.flambda);
-  if num_sections_read_from_cmx_file ui <> 1 then
-    Misc.fatal_error "Not a Closure approx (wrong number of sections)"
-  else
-    match read_section_from_cmx_file ui ~index:0 with
-    | Some info ->
-      let (info : section_contents) = Obj.obj info in
-      begin match info with
-      | Closure approx -> approx
-      | Flambda1 _
-      | Flambda2 _ -> Misc.fatal_error "Not a Closure approx"
-    end
-    | None -> Misc.fatal_error "Clambda section could not be read"
+  match ui.ui_export_info with
+  | Flambda1 _ | Flambda2 -> assert false
+  | Clambda approx -> approx
 
 let toplevel_approx :
   (string, Clambda.value_approximation) Hashtbl.t = Hashtbl.create 16
@@ -371,8 +376,6 @@ let record_global_approx_toplevel () =
   Hashtbl.add toplevel_approx current_unit.ui_name
     (get_clambda_approx current_unit)
 
-let global_approx_for_unit = get_clambda_approx
-
 let global_approx id =
   if Ident.is_predef id then Clambda.Value_unknown
   else try Hashtbl.find toplevel_approx (Ident.name id)
@@ -380,17 +383,6 @@ let global_approx id =
     match get_global_info id with
       | None -> Clambda.Value_unknown
       | Some ui -> get_clambda_approx ui
-
-(* Exporting and importing cross module information for Closure *)
-
-let set_global_approx_for_unit ui approx =
-  assert(not Config.flambda && not Config.flambda2);
-  match ui.ui_sections_to_write_rev with
-  | [] -> ignore ((add_section ui (Closure approx)) : int)
-  | _::_ -> Misc.fatal_error "Closure value approximation already set"
-
-let set_global_approx approx =
-  set_global_approx_for_unit current_unit approx
 
 (* Return the symbol used to refer to a global identifier *)
 
@@ -429,31 +421,21 @@ let symbol_for_global' id =
   else
     Symbol.of_global_linkage (unit_for_global id) sym_label
 
-(* Handling of export information for Flambda 1 *)
+let set_global_approx approx =
+  assert(not Config.flambda);
+  current_unit.ui_export_info <- Clambda approx
 
-let set_export_info_for_unit ui (export_info : Export_info.t) =
-  assert(Config.flambda);
-  match ui.ui_sections_to_write_rev with
-  | [] -> ignore ((add_section ui (Flambda1 export_info)) : int)
-  | _::_ -> Misc.fatal_error "Closure value approximation already set"
-
-let set_export_info (export_info : Export_info.t) : unit =
-  set_export_info_for_unit current_unit export_info
+(* Exporting and importing cross module information *)
 
 let get_flambda1_export_info_for_unit ui =
   assert(Config.flambda);
-  if num_sections_read_from_cmx_file ui <> 1 then
-    Misc.fatal_error "Not a Flambda 1 approx (wrong number of sections)"
-  else
-    match read_section_from_cmx_file ui ~index:0 with
-    | Some info ->
-      let (info : section_contents) = Obj.obj info in
-      begin match info with
-      | Flambda1 export_info -> export_info
-      | Closure _
-      | Flambda2 _ -> Misc.fatal_error "Not a Flambda 1 export info"
-    end
-    | None -> Misc.fatal_error "Flambda 1 section could not be read"
+  match ui.ui_export_info with
+  | Clambda _ | Flambda2 -> assert false
+  | Flambda1 ei -> ei
+
+let set_export_info export_info =
+  assert(Config.flambda);
+  current_unit.ui_export_info <- Flambda1 export_info
 
 let approx_for_global comp_unit =
   let id = Compilation_unit.get_persistent_ident comp_unit in
@@ -479,17 +461,17 @@ let approx_env () = !merged_environment
 
 (* Handling of export information for Flambda 2 *)
 
-let ensure_is_flambda_section ui section_contents =
+let ensure_is_flambda_section _ui section_contents =
   match section_contents with
   | None -> None
   | Some section_contents ->
     match ((Obj.obj section_contents) : section_contents) with
     | Flambda2 contents -> Some contents
-    | Flambda1 _ | Closure _ ->
-      Misc.fatal_errorf "The .cmx file for module %s was written by the \
-          Closure of Flambda 1 middle end, not Flambda 2. \
-          Please recompile it."
-        ui.ui_name
+    (* | Flambda1 | Closure ->
+     *   Misc.fatal_errorf "The .cmx file for module %s was written by the \
+     *       Closure of Flambda 1 middle end, not Flambda 2. \
+     *       Please recompile it."
+     *     ui.ui_name *)
 
 let read_flambda_section_from_cmx_file ui ~index =
   read_section_from_cmx_file ui ~index

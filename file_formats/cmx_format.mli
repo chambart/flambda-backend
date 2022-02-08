@@ -33,6 +33,11 @@ open Misc
    The .cmx file is structured so that the approximation / export info has
    to be read explicitly, possibly in several pieces, to reduce overhead. *)
 
+type export_info =
+  | Clambda of Clambda.value_approximation
+  | Flambda1 of Export_info.t
+  | Flambda2
+
 type section =
   { byte_offset_in_cmx : int;
     section_contents : Obj.t option;
@@ -47,6 +52,7 @@ type unit_infos =
     mutable ui_curry_fun: int list;       (* Currying functions needed *)
     mutable ui_apply_fun: int list;       (* Apply functions needed *)
     mutable ui_send_fun: int list;        (* Send functions needed *)
+    mutable ui_export_info: export_info;
     mutable ui_force_link: bool;          (* Always linked *)
     mutable ui_section_toc: int list;     (* Byte offsets of sections in .cmx
                                              relative to byte immediately after

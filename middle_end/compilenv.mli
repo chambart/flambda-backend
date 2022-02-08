@@ -77,19 +77,8 @@ val symbol_for_global: Ident.t -> string
            flambda-only *)
 val symbol_for_global': Ident.t -> Symbol.t
         (* flambda-only *)
-val global_approx_for_unit
-   : Cmx_format.unit_infos
-  -> Clambda.value_approximation
-        (* Return the approximation from the given unit infos record
-           clambda-only *)
 val global_approx: Ident.t -> Clambda.value_approximation
         (* Return the approximation for the given global identifier
-           clambda-only *)
-val set_global_approx_for_unit
-   : Cmx_format.unit_infos
-  -> Clambda.value_approximation
-  -> unit
-        (* Record the approximation for the given unit
            clambda-only *)
 val set_global_approx: Clambda.value_approximation -> unit
         (* Record the approximation of the unit being compiled
@@ -98,19 +87,16 @@ val record_global_approx_toplevel: unit -> unit
         (* Record the current approximation for the current toplevel phrase
            clambda-only *)
 
-val get_flambda1_export_info_for_unit
-   : Cmx_format.unit_infos
-  -> Export_info.t
 val set_export_info: Export_info.t -> unit
         (* Record the information of the unit being compiled
            flambda-only *)
 
-val set_export_info_for_unit
-   : Cmx_format.unit_infos
-  -> Export_info.t
-  -> unit
-        (* Record the information of the given unit
-           flambda-only *)
+(* val set_export_info_for_unit
+ *    : Cmx_format.unit_infos
+ *   -> Export_info.t
+ *   -> unit
+ *         (\* Record the information of the given unit
+ *            flambda-only *\) *)
 
 val approx_env: unit -> Export_info.t
         (* Returns all the information loaded from external compilation units
@@ -119,6 +105,9 @@ val approx_for_global: Compilation_unit.t -> Export_info.t option
         (* Loads the exported information declaring the compilation_unit
            flambda-only *)
 
+val get_global_info' : Ident.t -> Cmx_format.export_info option
+        (* Middle-end-agnostic means of getting the export info found in the
+           .cmx file of the given unit. *)
 val clear_export_info_for_unit : Cmx_format.unit_infos -> unit
 
 val read_flambda_header_section_for_unit_from_cmx_file
@@ -135,8 +124,6 @@ val set_flambda_export_info_for_unit
    : Cmx_format.unit_infos
   -> Flambda2_cmx.Flambda_cmx_format.t
   -> unit
-
-val set_flambda_export_info : Flambda2_cmx.Flambda_cmx_format.t -> unit
 
 val flambda2_set_export_info : Flambda2_cmx.Flambda_cmx_format.t -> unit
         (* Set the export information for the current unit (Flambda 2 only). *)
