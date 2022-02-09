@@ -181,8 +181,12 @@ let reset ?packname name =
   in
   Compilation_unit.set_current compilation_unit
 
-(* XXX close channel here *)
 let clear_export_info_for_unit ui =
+  (match ui.ui_channel with
+   | Some channel ->
+     close_in channel
+   | None -> ());
+  ui.ui_export_info <- default_ui_export_info;
   ui.ui_section_toc <- [];
   ui.ui_channel <- None;
   ui.ui_sections <- [| |];
@@ -231,6 +235,8 @@ let read_unit_info filename =
     ui.ui_sections <- sections;
     seek_in ic (offset_after_cmx_infos + !last_byte_offset_in_cmx);
     let crc = Digest.input ic in
+    if not Config.flambda2 then
+      close_in ic;
     ui, crc
   with End_of_file | Failure _ ->
     close_in ic;

@@ -91,13 +91,6 @@ val set_export_info: Export_info.t -> unit
         (* Record the information of the unit being compiled
            flambda-only *)
 
-(* val set_export_info_for_unit
- *    : Cmx_format.unit_infos
- *   -> Export_info.t
- *   -> unit
- *         (\* Record the information of the given unit
- *            flambda-only *\) *)
-
 val approx_env: unit -> Export_info.t
         (* Returns all the information loaded from external compilation units
            flambda-only *)
