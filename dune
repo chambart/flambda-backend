@@ -85,6 +85,7 @@
   clambda
   clambda_primitives
   compilation_unit
+  cmx_sections
   compilenv
   mangling
   convert_primitives

@@ -298,6 +298,8 @@ let build_package_cmx members cmxfile =
       ui_force_link =
           List.exists (fun info -> info.ui_force_link) units;
       ui_export_info;
+      ui_section_toc = failwith "TODO";
+      ui_sections_length = failwith "TODO";
     } in
   Compilenv.write_unit_info pkg_infos cmxfile
 
