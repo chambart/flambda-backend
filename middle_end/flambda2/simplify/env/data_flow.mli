@@ -82,6 +82,12 @@ val add_apply_cont_args : Continuation.t -> Name_occurrences.t list -> t -> t
 val add_extra_params_and_args :
   Continuation.t -> Continuation_extra_params_and_args.t -> t -> t
 
+val add_mut_block_decl : Variable.t -> Simple.t list -> t -> t
+
+val add_set_field : Variable.t -> value:Simple.t -> int -> t -> t
+
+val add_get_field : result:Variable.t -> Variable.t -> int -> t -> t
+
 (* {2 Analysis} *)
 
 module Reachable_code_ids : sig

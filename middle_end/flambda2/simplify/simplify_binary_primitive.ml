@@ -1175,7 +1175,7 @@ let simplify_binary_primitive dacc original_prim (prim : P.binary_primitive)
   let original_term = Named.create_prim original_prim dbg in
   let simplifier =
     match prim with
-    | Block_load (access_kind, Immutable) ->
+    | Block_load (access_kind, (Immutable | Immutable_unique)) ->
       simplify_immutable_block_load access_kind ~min_name_mode
     | Array_load (array_kind, mutability) ->
       simplify_array_load array_kind mutability
@@ -1215,13 +1215,27 @@ let simplify_binary_primitive dacc original_prim (prim : P.binary_primitive)
     | Float_arith op -> Binary_float_arith.simplify op
     | Float_comp op -> Binary_float_comp.simplify op
     | Phys_equal (kind, op) -> simplify_phys_equal op kind
-    | Block_load _ ->
+    | Block_load (_, Mutable) ->
       fun dacc ~original_term:_ dbg ~arg1 ~arg1_ty:_ ~arg2 ~arg2_ty:_
           ~result_var ->
         let prim : P.t = Binary (prim, arg1, arg2) in
         let named = Named.create_prim prim dbg in
         let ty = T.unknown (P.result_kind' prim) in
         let dacc = DA.add_variable dacc result_var ty in
+        let dacc =
+          match Simple.must_be_var arg1, Simple.must_be_const arg2 with
+          | None, _ | _, None -> dacc
+          | Some (var1, _coerc), Some const ->
+            let const =
+              match Reg_width_const.descr const with
+              | Tagged_immediate n ->
+                Targetint_31_63.Imm.to_int_exn (Targetint_31_63.to_targetint n)
+              | Naked_immediate _ | Naked_float _ | Naked_int32 _
+              | Naked_int64 _ | Naked_nativeint _ ->
+                Misc.fatal_errorf "Wrong kind for getfield argument"
+            in
+            DA.map_data_flow dacc ~f:(DF.add_get_field var1 ~result:(VB.var result_var) const)
+        in
         Simplified_named.reachable named ~try_reify:false, dacc
     | String_or_bigstring_load _ | Bigarray_load _ ->
       fun dacc ~original_term:_ dbg ~arg1 ~arg1_ty:_ ~arg2 ~arg2_ty:_

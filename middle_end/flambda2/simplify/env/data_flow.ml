@@ -35,6 +35,22 @@ end
 (* Typedefs *)
 (* ******** *)
 
+type mutblock =
+  | Decl of
+      { var : Variable.t;
+        fields : Simple.t list (* Should have kind ? *)
+      }
+  | GetField of
+      { from : Variable.t;
+        result : Variable.t;
+        field : int
+      }
+  | SetField of
+      { from : Variable.t;
+        value : Simple.t;
+        field : int
+      }
+
 (* CR-someday chambart/gbury: get rid of Name_occurences everywhere, this is not
    small while we need only the names
 
@@ -48,7 +64,8 @@ type elt =
     code_ids : Name_occurrences.t Code_id.Map.t;
     value_slots : Name_occurrences.t Name.Map.t Value_slot.Map.t;
     apply_cont_args :
-      Name_occurrences.t Numeric_types.Int.Map.t Continuation.Map.t
+      Name_occurrences.t Numeric_types.Int.Map.t Continuation.Map.t;
+    mutblock : mutblock list
   }
 
 type t =
@@ -65,6 +82,18 @@ type result =
 (* Print *)
 (* ***** *)
 
+let print_mutblock ppf = function
+  | Decl { var; fields } ->
+    Format.fprintf ppf "(%a %a)" Variable.print var
+      (Format.pp_print_list ~pp_sep:Format.pp_print_space Simple.print)
+      fields
+  | GetField { from; result; field } ->
+    Format.fprintf ppf "(%a = %a.(%i))" Variable.print result Variable.print
+      from field
+  | SetField { from; value; field } ->
+    Format.fprintf ppf "(%a.(%i) <- %a)" Variable.print from field
+      Simple.print value
+
 let print_elt ppf
     { continuation;
       params;
@@ -73,13 +102,14 @@ let print_elt ppf
       bindings;
       code_ids;
       value_slots;
-      apply_cont_args
+      apply_cont_args;
+      mutblock
     } =
   Format.fprintf ppf
     "@[<hov 1>(@[<hov 1>(continuation %a)@]@ @[<hov 1>(params %a)@]@ @[<hov \
      1>(used_in_handler %a)@]@ @[<hov 1>(apply_result_conts %a)@]@ @[<hov \
      1>(bindings %a)@]@ @[<hov 1>(code_ids %a)@]@ @[<hov 1>(value_slots %a)@]@ \
-     @[<hov 1>(apply_cont_args %a)@])@]"
+     @[<hov 1>(apply_cont_args %a)@]@ @[<hov 1>(mutblock %a)@])@]"
     Continuation.print continuation
     (Format.pp_print_list ~pp_sep:Format.pp_print_space Variable.print)
     params Name_occurrences.print used_in_handler Continuation.Set.print
@@ -93,6 +123,8 @@ let print_elt ppf
     (Continuation.Map.print
        (Numeric_types.Int.Map.print Name_occurrences.print))
     apply_cont_args
+    (Format.pp_print_list print_mutblock ~pp_sep:Format.pp_print_space)
+    mutblock
 
 let print_stack ppf stack =
   Format.fprintf ppf "@[<v 1>(%a)@]"
@@ -149,7 +181,8 @@ let enter_continuation continuation params t =
       value_slots = Value_slot.Map.empty;
       used_in_handler = Name_occurrences.empty;
       apply_cont_args = Continuation.Map.empty;
-      apply_result_conts = Continuation.Set.empty
+      apply_result_conts = Continuation.Set.empty;
+      mutblock = []
     }
   in
   { t with stack = elt :: t.stack }
@@ -292,6 +325,18 @@ let add_apply_cont_args cont arg_name_occurrences t =
           elt.apply_cont_args
       in
       { elt with apply_cont_args })
+
+let add_mut_block_decl var fields t =
+  update_top_of_stack ~t ~f:(fun elt ->
+      { elt with mutblock = Decl { var; fields } :: elt.mutblock })
+
+let add_set_field from ~value field t =
+  update_top_of_stack ~t ~f:(fun elt ->
+      { elt with mutblock = SetField { from; value; field } :: elt.mutblock })
+
+let add_get_field ~result from field t =
+  update_top_of_stack ~t ~f:(fun elt ->
+      { elt with mutblock = GetField { result; from; field } :: elt.mutblock })
 
 (* Dependency graph *)
 (* **************** *)
@@ -538,7 +583,8 @@ module Dependency_graph = struct
         code_ids;
         value_slots;
         continuation = _;
-        params = _
+        params = _;
+        mutblock = _
       } t =
     (* Add the vars used in the handler *)
     let t = add_name_occurrences used_in_handler t in

@@ -58,6 +58,15 @@ let simplify_make_block_of_values dacc prim dbg tag ~shape
         (Known alloc_mode) ~fields
     | Mutable -> T.mutable_block (Known alloc_mode)
   in
+  let dacc =
+    match mutable_or_immutable with
+    | Immutable
+    | Immutable_unique ->
+      dacc
+    | Mutable ->
+      Format.printf "PLOP %a@." VB.print result_var;
+      DA.map_data_flow dacc ~f:(DF.add_mut_block_decl (VB.var result_var) args)
+  in
   let dacc = DA.add_variable dacc result_var ty in
   (* CR mshinwell: here and in the next function, should we be adding CSE
      equations, like we do for unboxing boxed numbers? (see

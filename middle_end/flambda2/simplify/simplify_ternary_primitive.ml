@@ -40,15 +40,47 @@ let simplify_array_set original_prim (array_kind : P.Array_kind.t) dacc dbg
     let dacc = DA.add_variable dacc result_var ty in
     Simplified_named.reachable named ~try_reify:false, dacc
 
+let default_ternary_primitive dacc (prim : P.ternary_primitive) ~arg1 ~arg2
+    ~arg3 dbg ~result_var =
+  let prim : P.t = Ternary (prim, arg1, arg2, arg3) in
+  let named = Named.create_prim prim dbg in
+  let ty = T.unknown (P.result_kind' prim) in
+  let dacc = DA.add_variable dacc result_var ty in
+  Simplified_named.reachable named ~try_reify:false, dacc
+
+let is_var_int_var ~arg1 ~arg2 =
+  match
+    Simple.must_be_var arg1, Simple.must_be_const arg2
+  with
+  | Some (var1, _coerc1), Some const ->
+    let const =
+      match Reg_width_const.descr const with
+      | Tagged_immediate n ->
+        Targetint_31_63.Imm.to_int_exn (Targetint_31_63.to_targetint n)
+      | Naked_immediate _ | Naked_float _ | Naked_int32 _ | Naked_int64 _
+      | Naked_nativeint _ ->
+        Misc.fatal_errorf "Wrong kind for setfield argument"
+    in
+    Some (var1, const)
+  | _ -> None
+
 let simplify_ternary_primitive dacc original_prim (prim : P.ternary_primitive)
     ~arg1 ~arg1_ty ~arg2 ~arg2_ty:_ ~arg3 ~arg3_ty:_ dbg ~result_var =
   match prim with
   | Array_set (array_kind, _init_or_assign) ->
     simplify_array_set original_prim array_kind dacc dbg ~array_ty:arg1_ty
       ~result_var
-  | Block_set _ | Bytes_or_bigstring_set _ | Bigarray_set _ ->
-    let prim : P.t = Ternary (prim, arg1, arg2, arg3) in
-    let named = Named.create_prim prim dbg in
-    let ty = T.unknown (P.result_kind' prim) in
-    let dacc = DA.add_variable dacc result_var ty in
-    Simplified_named.reachable named ~try_reify:false, dacc
+  | Block_set (Values { tag = _; size = _; field_kind = _ }, Assignment) ->
+    let dacc =
+      match is_var_int_var ~arg1 ~arg2 with
+      | Some (var1, const) ->
+        DA.map_data_flow dacc ~f:(DF.add_set_field var1 const ~value:arg3)
+      | None ->
+        dacc
+    in
+    default_ternary_primitive dacc prim ~arg1 ~arg2 ~arg3 dbg ~result_var
+  | Block_set
+      ( (Values _ | Naked_floats _),
+        (Initialization | Assignment | Local_assignment) )
+  | Bytes_or_bigstring_set _ | Bigarray_set _ ->
+    default_ternary_primitive dacc prim ~arg1 ~arg2 ~arg3 dbg ~result_var
