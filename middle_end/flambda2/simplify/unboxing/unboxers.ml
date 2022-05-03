@@ -28,7 +28,8 @@ type unboxer =
   { var_name : string;
     invalid_const : Const.t;
     unboxing_prim : Simple.t -> P.t;
-    prove_simple : TE.t -> min_name_mode:Name_mode.t -> T.t -> Simple.t T.proof_of_operation
+    prove_simple :
+      TE.t -> min_name_mode:Name_mode.t -> T.t -> Simple.t T.proof_of_operation
   }
 
 module type Number_S = sig

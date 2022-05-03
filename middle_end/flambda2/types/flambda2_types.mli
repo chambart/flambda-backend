@@ -547,19 +547,25 @@ val prove_equals_tagged_immediates :
 val check_equals_tagged_immediates :
   Typing_env.t -> t -> Targetint_31_63.Set.t proof_of_operation
 
-val check_naked_immediates : Typing_env.t -> t -> Targetint_31_63.Set.t proof_of_operation
+val check_naked_immediates :
+  Typing_env.t -> t -> Targetint_31_63.Set.t proof_of_operation
 
 val check_equals_single_tagged_immediate :
   Typing_env.t -> t -> Targetint_31_63.t proof_of_operation
 
 val check_naked_floats :
-  Typing_env.t -> t -> Numeric_types.Float_by_bit_pattern.Set.t proof_of_operation
+  Typing_env.t ->
+  t ->
+  Numeric_types.Float_by_bit_pattern.Set.t proof_of_operation
 
-val check_naked_int32s : Typing_env.t -> t -> Numeric_types.Int32.Set.t proof_of_operation
+val check_naked_int32s :
+  Typing_env.t -> t -> Numeric_types.Int32.Set.t proof_of_operation
 
-val check_naked_int64s : Typing_env.t -> t -> Numeric_types.Int64.Set.t proof_of_operation
+val check_naked_int64s :
+  Typing_env.t -> t -> Numeric_types.Int64.Set.t proof_of_operation
 
-val check_naked_nativeints : Typing_env.t -> t -> Targetint_32_64.Set.t proof_of_operation
+val check_naked_nativeints :
+  Typing_env.t -> t -> Targetint_32_64.Set.t proof_of_operation
 
 type variant_like_proof = private
   { const_ctors : Targetint_31_63.Set.t Or_unknown.t;
@@ -587,37 +593,35 @@ type boxed_or_tagged_number = private
 val prove_is_a_boxed_or_tagged_number :
   Typing_env.t -> t -> boxed_or_tagged_number proof_of_property
 
-val prove_is_a_tagged_immediate :
-  Typing_env.t -> t -> unit proof_of_property
+val prove_is_a_tagged_immediate : Typing_env.t -> t -> unit proof_of_property
 
-val prove_is_a_boxed_float :
-  Typing_env.t -> t -> unit proof_of_property
+val prove_is_a_boxed_float : Typing_env.t -> t -> unit proof_of_property
 
-val prove_is_a_boxed_int32 :
-  Typing_env.t -> t -> unit proof_of_property
+val prove_is_a_boxed_int32 : Typing_env.t -> t -> unit proof_of_property
 
-val prove_is_a_boxed_int64 :
-  Typing_env.t -> t -> unit proof_of_property
+val prove_is_a_boxed_int64 : Typing_env.t -> t -> unit proof_of_property
 
-val prove_is_a_boxed_nativeint :
-  Typing_env.t -> t -> unit proof_of_property
+val prove_is_a_boxed_nativeint : Typing_env.t -> t -> unit proof_of_property
 
 val prove_is_or_is_not_a_boxed_float :
   Typing_env.t -> t -> bool proof_of_property
 
 val check_boxed_floats :
-  Typing_env.t -> t -> Numeric_types.Float_by_bit_pattern.Set.t proof_of_operation
-
-val check_boxed_int32s : Typing_env.t -> t -> Numeric_types.Int32.Set.t proof_of_operation
-
-val check_boxed_int64s : Typing_env.t -> t -> Numeric_types.Int64.Set.t proof_of_operation
-
-val check_boxed_nativeints : Typing_env.t -> t -> Targetint_32_64.Set.t proof_of_operation
-
-val prove_unique_tag_and_size :
   Typing_env.t ->
   t ->
-  (Tag.t * Targetint_31_63.Imm.t) proof_of_property
+  Numeric_types.Float_by_bit_pattern.Set.t proof_of_operation
+
+val check_boxed_int32s :
+  Typing_env.t -> t -> Numeric_types.Int32.Set.t proof_of_operation
+
+val check_boxed_int64s :
+  Typing_env.t -> t -> Numeric_types.Int64.Set.t proof_of_operation
+
+val check_boxed_nativeints :
+  Typing_env.t -> t -> Targetint_32_64.Set.t proof_of_operation
+
+val prove_unique_tag_and_size :
+  Typing_env.t -> t -> (Tag.t * Targetint_31_63.Imm.t) proof_of_property
 
 val prove_is_int : Typing_env.t -> t -> bool proof_of_property
 

@@ -16,14 +16,13 @@
 
 [@@@ocaml.warning "+a-30-40-41-42"]
 
-
-(** A [proof_of_operation] gives us the result of a particular operation.
-    The corresponding functions provide efficient alternatives to the generic
-    meet function, with similar semantics. *)
+(** A [proof_of_operation] gives us the result of a particular operation. The
+    corresponding functions provide efficient alternatives to the generic meet
+    function, with similar semantics. *)
 type 'a proof_of_operation = private
-  | Known_result of 'a (** Result has been succesfully computed *)
-  | Unknown            (** Exact result could not be computed or is Top *)
-  | Invalid            (** Result is Bottom *)
+  | Known_result of 'a  (** Result has been succesfully computed *)
+  | Unknown  (** Exact result could not be computed or is Top *)
+  | Invalid  (** Result is Bottom *)
 
 (** A [proof_of_property] tells us whether the input type matches a given
     property. The extra type parameter can hold additional information, for
@@ -35,9 +34,7 @@ type 'a proof_of_property = private
 
 (** If this returns a simple, it is bound with mode Normal *)
 val prove_equals_to_simple_of_kind_value :
-  Typing_env.t ->
-  Type_grammar.t ->
-  Simple.t proof_of_property
+  Typing_env.t -> Type_grammar.t -> Simple.t proof_of_property
 
 (* CR mshinwell: Should remove "_equals_" from these names *)
 val prove_equals_tagged_immediates :
@@ -72,23 +69,17 @@ type variant_like_proof = private
   }
 
 val check_variant_like :
-  Typing_env.t ->
-  Type_grammar.t ->
-  variant_like_proof proof_of_operation
+  Typing_env.t -> Type_grammar.t -> variant_like_proof proof_of_operation
 
 val prove_variant_like :
-  Typing_env.t ->
-  Type_grammar.t ->
-  variant_like_proof proof_of_property
+  Typing_env.t -> Type_grammar.t -> variant_like_proof proof_of_property
 
 type boxed_or_tagged_number = private
   | Boxed of Flambda_kind.Boxable_number.t
   | Tagged_immediate
 
 val prove_is_a_boxed_or_tagged_number :
-  Typing_env.t ->
-  Type_grammar.t ->
-  boxed_or_tagged_number proof_of_property
+  Typing_env.t -> Type_grammar.t -> boxed_or_tagged_number proof_of_property
 
 val prove_is_a_tagged_immediate :
   Typing_env.t -> Type_grammar.t -> unit proof_of_property
@@ -129,7 +120,8 @@ val prove_unique_tag_and_size :
 
 val prove_is_int : Typing_env.t -> Type_grammar.t -> bool proof_of_property
 
-val prove_get_tag : Typing_env.t -> Type_grammar.t -> Tag.Set.t proof_of_property
+val prove_get_tag :
+  Typing_env.t -> Type_grammar.t -> Tag.Set.t proof_of_property
 
 type array_kind_compatibility =
   | Exact
@@ -160,25 +152,44 @@ val prove_single_closures_entry :
   * Type_grammar.Function_type.t)
   proof_of_property
 
-val check_strings : Typing_env.t -> Type_grammar.t -> String_info.Set.t proof_of_operation
+val check_strings :
+  Typing_env.t -> Type_grammar.t -> String_info.Set.t proof_of_operation
 
 val prove_tagging_of_simple :
-  Typing_env.t -> min_name_mode:Name_mode.t -> Type_grammar.t -> Simple.t proof_of_property
+  Typing_env.t ->
+  min_name_mode:Name_mode.t ->
+  Type_grammar.t ->
+  Simple.t proof_of_property
 
 val check_tagging_of_simple :
-  Typing_env.t -> min_name_mode:Name_mode.t -> Type_grammar.t -> Simple.t proof_of_operation
+  Typing_env.t ->
+  min_name_mode:Name_mode.t ->
+  Type_grammar.t ->
+  Simple.t proof_of_operation
 
 val check_boxed_float_containing_simple :
-  Typing_env.t -> min_name_mode:Name_mode.t -> Type_grammar.t -> Simple.t proof_of_operation
+  Typing_env.t ->
+  min_name_mode:Name_mode.t ->
+  Type_grammar.t ->
+  Simple.t proof_of_operation
 
 val check_boxed_int32_containing_simple :
-  Typing_env.t -> min_name_mode:Name_mode.t -> Type_grammar.t -> Simple.t proof_of_operation
+  Typing_env.t ->
+  min_name_mode:Name_mode.t ->
+  Type_grammar.t ->
+  Simple.t proof_of_operation
 
 val check_boxed_int64_containing_simple :
-  Typing_env.t -> min_name_mode:Name_mode.t -> Type_grammar.t -> Simple.t proof_of_operation
+  Typing_env.t ->
+  min_name_mode:Name_mode.t ->
+  Type_grammar.t ->
+  Simple.t proof_of_operation
 
 val check_boxed_nativeint_containing_simple :
-  Typing_env.t -> min_name_mode:Name_mode.t -> Type_grammar.t -> Simple.t proof_of_operation
+  Typing_env.t ->
+  min_name_mode:Name_mode.t ->
+  Type_grammar.t ->
+  Simple.t proof_of_operation
 
 val check_block_field_simple :
   Typing_env.t ->
@@ -209,7 +220,8 @@ val check_project_function_slot_simple :
   Function_slot.t ->
   Simple.t proof_of_operation
 
-val check_rec_info : Typing_env.t -> Type_grammar.t -> Rec_info_expr.t proof_of_operation
+val check_rec_info :
+  Typing_env.t -> Type_grammar.t -> Rec_info_expr.t proof_of_operation
 
 val prove_alloc_mode_of_boxed_number :
   Typing_env.t -> Type_grammar.t -> Alloc_mode.t proof_of_property

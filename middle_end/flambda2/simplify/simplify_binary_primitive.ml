@@ -242,7 +242,8 @@ end = struct
       only_one_side_known
         (fun i -> N.op_lhs_unknown op ~rhs:i)
         nums2 ~folder:N.Rhs.Set.fold ~other_side:arg1
-    | (Known_result _ | Unknown), (Known_result _ | Unknown) -> result_unknown ()
+    | (Known_result _ | Unknown), (Known_result _ | Unknown) ->
+      result_unknown ()
     | Invalid, _ | _, Invalid -> result_invalid ()
 end
 [@@inline always]

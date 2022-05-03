@@ -58,7 +58,8 @@ let unbox_arg (unboxer : Unboxers.unboxer) ~typing_env_at_use arg_being_unboxed
       unboxer.prove_simple typing_env_at_use arg_type
         ~min_name_mode:Name_mode.normal
     with
-    | Known_result simple -> EPA.Extra_arg.Already_in_scope simple, Available simple
+    | Known_result simple ->
+      EPA.Extra_arg.Already_in_scope simple, Available simple
     | Invalid ->
       let extra_arg =
         EPA.Extra_arg.Already_in_scope (Simple.const unboxer.invalid_const)

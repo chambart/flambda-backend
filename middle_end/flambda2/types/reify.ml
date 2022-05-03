@@ -77,10 +77,12 @@ let reify ?allowed_if_free_vars_defined_in ?additional_free_var_criterion
     &&
     match alloc_mode with
     | Known Heap -> true
-    | Unknown | Known Local ->
-      match Provers.never_holds_locally_allocated_values env var Flambda_kind.value with
+    | Unknown | Known Local -> (
+      match
+        Provers.never_holds_locally_allocated_values env var Flambda_kind.value
+      with
       | Proved () -> true
-      | Unknown | Wrong_kind -> false
+      | Unknown | Wrong_kind -> false)
   in
   let canonical_simple =
     match TE.get_alias_then_canonical_simple_exn env ~min_name_mode t with
@@ -128,38 +130,36 @@ let reify ?allowed_if_free_vars_defined_in ?additional_free_var_criterion
                   List.filter_map
                     (fun field_type : Simple.t option ->
                       match
-                        Provers.prove_equals_to_simple_of_kind_value env field_type
+                        Provers.prove_equals_to_simple_of_kind_value env
+                          field_type
                       with
-                      | Proved simple when not (Coercion.is_id (Simple.coercion simple))
-                        ->
+                      | Proved simple
+                        when not (Coercion.is_id (Simple.coercion simple)) ->
                         (* CR-someday lmaurer: Support lifting things whose
                            fields have coercions. *)
                         None
                       | Proved simple ->
                         Simple.pattern_match' simple
                           ~var:(fun var ~coercion:_ ->
-                              if var_allowed alloc_mode var
-                              then Some simple
-                              else None)
+                            if var_allowed alloc_mode var
+                            then Some simple
+                            else None)
                           ~symbol:(fun _sym ~coercion:_ -> Some simple)
                           ~const:(fun const ->
-                              match Reg_width_const.descr const with
-                              | Tagged_immediate _imm -> Some simple
-                              | Naked_immediate _ | Naked_float _ | Naked_int32 _
-                              | Naked_int64 _ | Naked_nativeint _ ->
-                                (* This should never happen, as we should have got [Wrong_kind] instead *)
-                                None)
+                            match Reg_width_const.descr const with
+                            | Tagged_immediate _imm -> Some simple
+                            | Naked_immediate _ | Naked_float _ | Naked_int32 _
+                            | Naked_int64 _ | Naked_nativeint _ ->
+                              (* This should never happen, as we should have got
+                                 [Wrong_kind] instead *)
+                              None)
                       | Unknown | Wrong_kind -> None)
                     field_types
                 in
                 if List.compare_lengths field_types field_simples = 0
                 then
                   Lift
-                    (Immutable_block
-                       { tag;
-                         is_unique;
-                         fields = field_simples
-                       })
+                    (Immutable_block { tag; is_unique; fields = field_simples })
                 else try_canonical_simple ())
           else if TG.Row_like_for_blocks.is_bottom blocks
           then
@@ -176,32 +176,32 @@ let reify ?allowed_if_free_vars_defined_in ?additional_free_var_criterion
         | Known _, Unknown | Unknown, Known _ | Unknown, Unknown ->
           try_canonical_simple ())
     | Value (Ok (Mutable_block _)) -> try_canonical_simple ()
-    | Value (Ok (Closures { by_function_slot = _; alloc_mode = _ })) -> begin
-        try_canonical_simple ()
-        (* CR vlaviron: This rather complicated code could be useful, but since
-           a while ago Reification simply ignores List_set_of_closures results.
-           So I've commented out the code for now, and if we want to turn it on
-           again later we will need to think about issues like code duplication,
-           mutually recursive functions, and so on. *)
-    (* Example:
-     * include (struct
-     *   module type T = sig
-     *     val n : int
-     *   end
-     *
-     *   module F(T : T) = struct
-     *     let f x = x + T.n [@@inline never]
-     *   end [@@inline never]
-     *
-     *   module T = struct let n = 42 end
-     *
-     *   module A = F(T)
-     *
-     *   let toto = A.f
-     * end :
-     * sig
-     *   val toto : int -> int
-     * end) *)
+    | Value (Ok (Closures { by_function_slot = _; alloc_mode = _ })) ->
+      try_canonical_simple ()
+      (* CR vlaviron: This rather complicated code could be useful, but since a
+         while ago Reification simply ignores List_set_of_closures results. So
+         I've commented out the code for now, and if we want to turn it on again
+         later we will need to think about issues like code duplication,
+         mutually recursive functions, and so on. *)
+      (* Example:
+       * include (struct
+       *   module type T = sig
+       *     val n : int
+       *   end
+       *
+       *   module F(T : T) = struct
+       *     let f x = x + T.n [@@inline never]
+       *   end [@@inline never]
+       *
+       *   module T = struct let n = 42 end
+       *
+       *   module A = F(T)
+       *
+       *   let toto = A.f
+       * end :
+       * sig
+       *   val toto : int -> int
+       * end) *)
       (* (\* CR mshinwell: Here and above, move to separate function. *\)
        * match TG.Row_like_for_closures.get_singleton by_function_slot with
        * | None -> try_canonical_simple ()
@@ -297,7 +297,6 @@ let reify ?allowed_if_free_vars_defined_in ?additional_free_var_criterion
        *         function_types_with_value_slots Value_slot.Map.empty
        *     in
        *     Lift_set_of_closures { function_slot; function_types; value_slots } *)
-    end
     | Naked_immediate (Ok (Naked_immediates imms)) -> (
       match Targetint_31_63.Set.get_singleton imms with
       | None -> try_canonical_simple ()
