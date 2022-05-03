@@ -265,7 +265,8 @@ let add_apply_result_cont k t =
       let apply_result_conts = Continuation.Set.add k elt.apply_result_conts in
       { elt with apply_result_conts })
 
-let add_apply_cont_args cont arg_name_occurrences t =
+let add_apply_cont_args cont args t =
+  let arg_name_occurrences = List.map Simple.free_names args
   update_top_of_stack ~t ~f:(fun elt ->
       let apply_cont_args =
         Continuation.Map.update cont
