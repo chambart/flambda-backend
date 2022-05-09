@@ -47,8 +47,7 @@ type elt =
     bindings : Name_occurrences.t Name.Map.t;
     code_ids : Name_occurrences.t Code_id.Map.t;
     value_slots : Name_occurrences.t Name.Map.t Value_slot.Map.t;
-    apply_cont_args :
-      Name_occurrences.t Numeric_types.Int.Map.t Continuation.Map.t
+    apply_cont_args : Simple.Set.t Numeric_types.Int.Map.t Continuation.Map.t
   }
 
 type t =
@@ -90,8 +89,7 @@ let print_elt ppf
     code_ids
     (Value_slot.Map.print (Name.Map.print Name_occurrences.print))
     value_slots
-    (Continuation.Map.print
-       (Numeric_types.Int.Map.print Name_occurrences.print))
+    (Continuation.Map.print (Numeric_types.Int.Map.print Simple.Set.print))
     apply_cont_args
 
 let print_stack ppf stack =
@@ -266,7 +264,6 @@ let add_apply_result_cont k t =
       { elt with apply_result_conts })
 
 let add_apply_cont_args cont args t =
-  let arg_name_occurrences = List.map Simple.free_names args
   update_top_of_stack ~t ~f:(fun elt ->
       let apply_cont_args =
         Continuation.Map.update cont
@@ -276,23 +273,169 @@ let add_apply_cont_args cont args t =
             in
             let map, _ =
               List.fold_left
-                (fun (map, i) name_occurrences ->
+                (fun (map, i) arg ->
                   let map =
                     Numeric_types.Int.Map.update i
                       (fun old_opt ->
                         let old =
-                          Option.value ~default:Name_occurrences.empty old_opt
+                          Option.value ~default:Simple.Set.empty old_opt
                         in
-                        Some (Name_occurrences.union old name_occurrences))
+                        Some (Simple.Set.add arg old))
                       map
                   in
                   map, i + 1)
-                (map, 0) arg_name_occurrences
+                (map, 0) args
             in
             Some map)
           elt.apply_cont_args
       in
       { elt with apply_cont_args })
+
+(* Alias graph *)
+(* *********** *)
+
+module Alias_graph = struct
+  type t =
+    { var_to_simple : Simple.Set.t Variable.Map.t;
+      return : Simple.Set.t;
+      exn_return : Simple.Set.t
+    }
+
+  let empty =
+    { var_to_simple = Variable.Map.empty;
+      return = Simple.Set.empty;
+      exn_return = Simple.Set.empty
+    }
+
+  let [@ocamlformat "disable"] _print ppf { var_to_simple; return; exn_return } =
+    Format.fprintf ppf
+      "@[<hov 1>(@[<hov 1>(return@ %a)@]@ \
+                 @[<hov 1>(exn_return@ %a)@]@ \
+                 @[<hov 1>(var_to_simple@ %a)@])@]"
+        Simple.Set.print return
+        Simple.Set.print exn_return
+        (Variable.Map.print Simple.Set.print) var_to_simple
+
+  let add_dependency ~(src : Variable.t) ~(dst : Simple.Set.t)
+      ({ var_to_simple; _ } as t) =
+    let var_to_simple =
+      Variable.Map.update src
+        (function
+          | None -> Some dst | Some set -> Some (Simple.Set.union dst set))
+        var_to_simple
+    in
+    { t with var_to_simple }
+
+  let add_continuation_info map ~return_continuation ~exn_continuation _cont
+      { apply_cont_args;
+        apply_result_conts = _;
+        used_in_handler = _;
+        bindings = _;
+        code_ids = _;
+        value_slots = _;
+        continuation = _;
+        params = _
+      } t =
+    (* Build the graph of dependencies between continuation parameters and
+       arguments. *)
+    Continuation.Map.fold
+      (fun k args t ->
+        if Continuation.equal k return_continuation
+        then
+          let args = Numeric_types.Int.Map.bindings args in
+          match args with
+          | [(_idx, arg)] -> { t with return = Simple.Set.union arg t.return }
+          | [] | _ :: _ :: _ -> assert false
+        else if Continuation.equal k exn_continuation
+        then
+          let args = Numeric_types.Int.Map.bindings args in
+          match args with
+          | [(_idx, arg)] ->
+            { t with exn_return = Simple.Set.union arg t.exn_return }
+          | [] | _ :: _ :: _ -> assert false
+        else
+          let params =
+            match Continuation.Map.find k map with
+            | elt -> Array.of_list elt.params
+            | exception Not_found ->
+              Misc.fatal_errorf "Continuation not found during Data_flow: %a@."
+                Continuation.print k
+          in
+          Numeric_types.Int.Map.fold
+            (fun i arg t ->
+              let src = params.(i) in
+              add_dependency ~src ~dst:arg t)
+            args t)
+      apply_cont_args t
+
+  let create ~return_continuation ~exn_continuation map extra =
+    let t =
+      Continuation.Map.fold
+        (add_continuation_info map ~return_continuation ~exn_continuation)
+        map empty
+    in
+
+    (* Take into account the extra params and args. *)
+    let t =
+      Continuation.Map.fold
+        (fun _ (extra_params_and_args : Continuation_extra_params_and_args.t) t ->
+          Apply_cont_rewrite_id.Map.fold
+            (fun _ extra_args t ->
+              List.fold_left2
+                (fun t extra_param extra_arg ->
+                  let src = Bound_parameter.var extra_param in
+                  match
+                    (extra_arg : Continuation_extra_params_and_args.Extra_arg.t)
+                  with
+                  | Already_in_scope simple ->
+                    let dst = Simple.Set.singleton simple in
+                    add_dependency ~src ~dst t
+                  | New_let_binding (src', prim) ->
+                    ignore (src', prim);
+                    failwith "TODO: New_let_binding"
+                    (* let src' = Name.var src' in
+                     * Name_occurrences.fold_names
+                     *   (Flambda_primitive.free_names prim)
+                     *   ~f:(fun t dst -> add_dependency ~src:src' ~dst t)
+                     *   ~init:(add_dependency ~src ~dst:src' t) *)
+                  | New_let_binding_with_named_args (_src', _prim_gen) ->
+                    (* In this case, the free_vars present in the result of
+                       _prim_gen are fresh (and a subset of the simples given to
+                       _prim_gen) and generated when going up while creating a
+                       wrapper continuation for the return of a function
+                       application.
+
+                       In that case, the fresh parameters created for the
+                       wrapper cannot introduce dependencies to other variables
+                       or parameters of continuations.
+
+                       Therefore, in this case, the data_flow analysis is
+                       incomplete, and we instead rely on the free_names
+                       analysis to eliminate the extra_let binding if it is
+                       unneeded. *)
+                    failwith "TODO: New_let_binding_with_named_args"
+                  (* t *))
+                t
+                (Bound_parameters.to_list extra_params_and_args.extra_params)
+                extra_args)
+            extra_params_and_args.extra_args t)
+        extra t
+    in
+
+    t
+
+  (* type result = { aliases : Variable.t Variable.Map.t } *)
+
+  type vstate = Bottom | Alias of Variable.Set.t | Top
+  let join_vstate a b =
+    match a, b with
+    | Bottom, x | x, Bottom -> x
+    | Top, _ | _, Top -> Top
+    | Alias a, Alias b ->
+      if Variable.equal a b then a
+  (* type state = { known *) 
+
+end
 
 (* Dependency graph *)
 (* **************** *)
@@ -601,13 +744,15 @@ module Dependency_graph = struct
     (* Build the graph of dependencies between continuation parameters and
        arguments. *)
     Continuation.Map.fold
-      (fun k args t ->
+      (fun k (args : Simple.Set.t Numeric_types.Int.Map.t) t ->
         if Continuation.equal return_continuation k
            || Continuation.equal exn_continuation k
         then
           Numeric_types.Int.Map.fold
-            (fun _ name_occurrences t ->
-              add_name_occurrences name_occurrences t)
+            (fun _ arg t ->
+              Simple.Set.fold
+                (fun arg t -> add_name_occurrences (Simple.free_names arg) t)
+                arg t)
             args t
         else
           let params =
@@ -618,7 +763,7 @@ module Dependency_graph = struct
                 Continuation.print k
           in
           Numeric_types.Int.Map.fold
-            (fun i name_occurrence t ->
+            (fun i arg t ->
               (* Note on the direction of the edge:
 
                  We later do a reachability analysis to compute the transitive
@@ -631,6 +776,12 @@ module Dependency_graph = struct
                  used, then any argument provided for that param is also used.
                  The other way wouldn't make much sense. *)
               let src = Name.var params.(i) in
+              let name_occurrence =
+                Simple.Set.fold
+                  (fun arg t ->
+                    Name_occurrences.union t (Simple.free_names arg))
+                  arg Name_occurrences.empty
+              in
               Name_occurrences.fold_names name_occurrence ~init:t
                 ~f:(fun t dst -> add_dependency ~src ~dst t))
             args t)
@@ -724,4 +875,8 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
       (* Format.eprintf "/// graph@\n%a@\n@." Dependency_graph._print deps; *)
       let result = Dependency_graph.required_names deps in
       (* Format.eprintf "/// result@\n%a@\n@." _print_result result; *)
+      let _aliases =
+        Alias_graph.create map extra ~return_continuation ~exn_continuation
+      in
+      Format.eprintf "/// graph@\n%a@\n@." Alias_graph._print _aliases;
       result)
