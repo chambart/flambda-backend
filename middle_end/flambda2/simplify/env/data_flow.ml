@@ -297,17 +297,20 @@ let add_apply_cont_args cont args t =
 module Alias_graph = struct
   type t =
     { var_to_simple : Simple.Set.t Variable.Map.t;
+      dummy_escape_var : Variable.t;
       return : Simple.Set.t;
       exn_return : Simple.Set.t
     }
 
-  let empty =
+  let empty () =
     { var_to_simple = Variable.Map.empty;
+      dummy_escape_var = Variable.create "dummy_escape_var";
       return = Simple.Set.empty;
       exn_return = Simple.Set.empty
     }
 
-  let [@ocamlformat "disable"] _print ppf { var_to_simple; return; exn_return } =
+  let [@ocamlformat "disable"] _print ppf
+    { var_to_simple; return; exn_return; dummy_escape_var = _ } =
     Format.fprintf ppf
       "@[<hov 1>(@[<hov 1>(return@ %a)@]@ \
                  @[<hov 1>(exn_return@ %a)@]@ \
@@ -372,7 +375,7 @@ module Alias_graph = struct
     let t =
       Continuation.Map.fold
         (add_continuation_info map ~return_continuation ~exn_continuation)
-        map empty
+        map (empty ())
     in
 
     (* Take into account the extra params and args. *)
@@ -390,31 +393,14 @@ module Alias_graph = struct
                   | Already_in_scope simple ->
                     let dst = Simple.Set.singleton simple in
                     add_dependency ~src ~dst t
-                  | New_let_binding (src', prim) ->
-                    ignore (src', prim);
-                    failwith "TODO: New_let_binding"
-                    (* let src' = Name.var src' in
-                     * Name_occurrences.fold_names
-                     *   (Flambda_primitive.free_names prim)
-                     *   ~f:(fun t dst -> add_dependency ~src:src' ~dst t)
-                     *   ~init:(add_dependency ~src ~dst:src' t) *)
-                  | New_let_binding_with_named_args (_src', _prim_gen) ->
-                    (* In this case, the free_vars present in the result of
-                       _prim_gen are fresh (and a subset of the simples given to
-                       _prim_gen) and generated when going up while creating a
-                       wrapper continuation for the return of a function
-                       application.
-
-                       In that case, the fresh parameters created for the
-                       wrapper cannot introduce dependencies to other variables
-                       or parameters of continuations.
-
-                       Therefore, in this case, the data_flow analysis is
-                       incomplete, and we instead rely on the free_names
-                       analysis to eliminate the extra_let binding if it is
-                       unneeded. *)
-                    failwith "TODO: New_let_binding_with_named_args"
-                  (* t *))
+                  | New_let_binding (src', _prim) ->
+                    add_dependency ~src
+                      ~dst:(Simple.Set.singleton (Simple.var src'))
+                      t
+                  | New_let_binding_with_named_args (src', _prim_gen) ->
+                    add_dependency ~src
+                      ~dst:(Simple.Set.singleton (Simple.var src'))
+                      t)
                 t
                 (Bound_parameters.to_list extra_params_and_args.extra_params)
                 extra_args)
@@ -424,17 +410,101 @@ module Alias_graph = struct
 
     t
 
+  module Dom = struct
+    module Node = Variable
+
+    type graph =
+      { entry : Variable.Set.t;
+        links : Variable.Set.t Variable.Map.t
+      }
+
+    let [@ocamlformat "disable"] _print ppf { entry; links } =
+      Format.fprintf ppf
+        "@[<hov 1>(@[<hov 1>(entry@ %a)@]@ \
+                   @[<hov 1>(links@ %a)@])@]"
+          Variable.Set.print entry
+          (Variable.Map.print Variable.Set.print) links
+
+    let [@ocamlformat "disable"] _print_result ppf dom =
+      Format.fprintf ppf
+        "@[<hov 1>(@[<hov 1>(dominators@ %a)@])@]"
+          (Variable.Map.print Variable.Set.print) dom
+
+    let all_variables simples =
+      try
+        let set =
+          Simple.Set.fold
+            (fun s acc ->
+              match Simple.must_be_var s with
+              | None -> raise Exit
+              | Some (var, _) -> Variable.Set.add var acc)
+            simples Variable.Set.empty
+        in
+        Some set
+      with Exit -> None
+
+    let make_graph (t : t) =
+      let g =
+        Variable.Map.fold
+          (fun node simples g ->
+            match all_variables simples with
+            | None -> { g with entry = Variable.Set.add node g.entry }
+            | Some set ->
+              if Variable.Set.mem t.dummy_escape_var set
+              then { g with entry = Variable.Set.add node g.entry }
+              else { g with links = Variable.Map.add node set g.links })
+          t.var_to_simple
+          { entry = Variable.Set.empty; links = Variable.Map.empty }
+      in
+      Variable.Map.fold
+        (fun _ prev g ->
+          Variable.Set.fold
+            (fun v g ->
+              if Variable.Map.mem v g.links
+              then g
+              else { g with entry = Variable.Set.add v g.entry })
+            prev g)
+        g.links g
+
+    let nodes g =
+      Node.Set.union g.entry
+        (Node.Map.fold
+           (fun k _ set -> Node.Set.add k set)
+           g.links Node.Set.empty)
+
+    let init g =
+      let nodes = nodes g in
+      let init_map = Node.Map.map (fun _ -> nodes) g.links in
+      Node.Set.fold
+        (fun e map -> Node.Map.add e (Node.Set.singleton e) map)
+        g.entry init_map
+
+    let fold_first (first : 'a -> 'b) next (seq : 'a Seq.t) : 'b =
+      match seq () with
+      | Nil -> invalid_arg "Empty seq"
+      | Cons (f, t) -> Seq.fold_left next (first f) t
+
+    let step node pred (state, changed) =
+      let new_dom =
+        Node.Set.add node
+        @@ fold_first
+             (fun first -> Node.Map.find first state)
+             (fun set elt -> Node.Set.inter set (Node.Map.find elt state))
+             (Node.Set.to_seq pred)
+      in
+      let prev_dom = Node.Map.find node state in
+      if Node.Set.equal prev_dom new_dom
+      then state, changed
+      else Node.Map.add node new_dom state, true
+
+    let dom g =
+      let rec loop state =
+        let state, changed = Node.Map.fold step g.links (state, false) in
+        if changed then loop state else state
+      in
+      loop (init g)
+  end
   (* type result = { aliases : Variable.t Variable.Map.t } *)
-
-  type vstate = Bottom | Alias of Variable.Set.t | Top
-  let join_vstate a b =
-    match a, b with
-    | Bottom, x | x, Bottom -> x
-    | Top, _ | _, Top -> Top
-    | Alias a, Alias b ->
-      if Variable.equal a b then a
-  (* type state = { known *) 
-
 end
 
 (* Dependency graph *)
@@ -879,4 +949,8 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
         Alias_graph.create map extra ~return_continuation ~exn_continuation
       in
       Format.eprintf "/// graph@\n%a@\n@." Alias_graph._print _aliases;
+      let _graph = Alias_graph.Dom.make_graph _aliases in
+      Format.eprintf "/// dom_graph@\n%a@\n@." Alias_graph.Dom._print _graph;
+      let _dom = Alias_graph.Dom.dom _graph in
+      Format.eprintf "/// dom@\n%a@\n@." Alias_graph.Dom._print_result _dom;
       result)
