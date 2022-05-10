@@ -72,8 +72,14 @@ and simplify_toplevel dacc expr ~return_continuation ~return_arity
               Or_unknown.Known (DA.used_value_slots dacc) )
         in
         let ({ required_names; reachable_code_ids } : Data_flow.result) =
-          Data_flow.analyze data_flow ~code_age_relation ~used_value_slots
-            ~return_continuation ~exn_continuation
+          try
+            Data_flow.analyze data_flow ~code_age_relation ~used_value_slots
+              ~return_continuation ~exn_continuation
+          with
+            e ->
+            Format.eprintf "@.@.********************@.@.%a@.@.##############@.@."
+              DA.print dacc;
+            raise e
         in
         (* The code_id part of the data_flow analysis is correct only at
            toplevel where all the code_ids are, so when in a closure, we state

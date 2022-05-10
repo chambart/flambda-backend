@@ -88,9 +88,14 @@ let speculative_inlining dacc ~apply ~function_type ~simplify_expr ~return_arity
            code_age_relation, and ignore the reachable_code_id part of the
            data_flow analysis. *)
         let ({ required_names; reachable_code_ids = _ } : Data_flow.result) =
+          try
           Data_flow.analyze data_flow ~code_age_relation:Code_age_relation.empty
             ~used_value_slots:Unknown ~return_continuation:function_return_cont
             ~exn_continuation:(Exn_continuation.exn_handler exn_continuation)
+          with e ->
+            Format.eprintf "@.@.********************@.Specul Inlining@.@.%a@.@.##############@.@."
+              DA.print dacc;
+            raise e
         in
         let uenv =
           (* Note that we don't need to do anything special if the exception

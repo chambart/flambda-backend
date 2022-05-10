@@ -355,7 +355,15 @@ module Alias_graph = struct
           match args with
           | [(_idx, arg)] ->
             { t with exn_return = Simple.Set.union arg t.exn_return }
-          | [] | _ :: _ :: _ -> assert false
+          | [] ->
+            assert false
+          | _ :: _ :: _ ->
+            Format.eprintf "Cont: %a %a@." Continuation.print k Continuation.print exn_continuation;
+            Format.eprintf "Args: %i@." (List.length args);
+            List.iter (fun (_, arg) ->
+                Format.eprintf "  %a@." Simple.Set.print arg)
+              args;
+            assert false
         else
           let params =
             match Continuation.Map.find k map with
