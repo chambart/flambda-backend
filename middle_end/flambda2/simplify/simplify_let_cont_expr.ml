@@ -23,6 +23,28 @@ type used_extra_params =
     extra_params_not_used_as_normal : BP.t list
   }
 
+let add_alias_extra_params (required_new_args : Variable.Set.t)
+    (extra_params_and_args : EPA.t) : EPA.t =
+  let args : Variable.t list = Variable.Set.elements required_new_args in
+  let as_extra_args =
+    List.map (fun v -> EPA.Extra_arg.Already_in_scope (Simple.var v)) args
+  in
+  let extra_args =
+    Apply_cont_rewrite_id.Map.map
+      (fun extra_args -> as_extra_args @ extra_args)
+      extra_params_and_args.extra_args
+  in
+  let bound_parameters =
+    (* /!\ TODO Mettre le bon kind /!\ *)
+    Bound_parameters.create
+      (List.map (fun v -> BP.create v Flambda_kind.With_subkind.any_value) args)
+  in
+  { extra_params =
+      Bound_parameters.append bound_parameters
+        extra_params_and_args.extra_params;
+    extra_args
+  }
+
 let compute_used_extra_params uacc (extra_params_and_args : EPA.t)
     ~is_single_inlinable_use ~free_names ~handler =
   (* If the continuation is going to be inlined out, we don't need to spend time
@@ -144,6 +166,12 @@ let rebuild_one_continuation_handler cont ~at_unit_toplevel
         ~lifted_constants_from_body:(UA.lifted_constants uacc)
         ~put_bindings_around_body:(fun uacc ~body -> body, uacc)
         ~body:handler
+  in
+  let extra_params_and_args =
+    match Continuation.Map.find_opt cont (UA.required_new_args uacc) with
+    | None -> extra_params_and_args
+    | Some required_new_args ->
+      add_alias_extra_params required_new_args extra_params_and_args
   in
   let free_names = UA.name_occurrences uacc in
   let cost_metrics = UA.cost_metrics uacc in
@@ -669,7 +697,9 @@ let after_downwards_traversal_of_non_recursive_let_cont_body ~simplify_expr
     dacc_after_body ~rebuild:rebuild_body =
   let dacc_after_body =
     DA.map_data_flow dacc_after_body
-      ~f:(Data_flow.enter_continuation cont (Bound_parameters.vars params))
+      ~f:
+        (Data_flow.enter_continuation cont ~recursive:false
+           (Bound_parameters.vars params))
   in
   (* Before the upwards traversal of the body, we do the downwards traversal of
      the handler. *)
@@ -850,7 +880,9 @@ let simplify_recursive_let_cont_handlers ~simplify_expr ~denv_before_body
     ~original_cont_scope ~down_to_up =
   let dacc_after_body =
     DA.map_data_flow dacc_after_body
-      ~f:(Data_flow.enter_continuation cont (Bound_parameters.vars params))
+      ~f:
+        (Data_flow.enter_continuation cont ~recursive:true
+           (Bound_parameters.vars params))
   in
   let denv, _arg_types =
     (* XXX These don't have the same scope level as the non-recursive case *)

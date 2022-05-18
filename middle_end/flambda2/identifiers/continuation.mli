@@ -40,6 +40,8 @@ val rename : t -> t
 
 val name : t -> string
 
+val name_stamp : t -> int
+
 val sort : t -> Sort.t
 
 val export : t -> exported

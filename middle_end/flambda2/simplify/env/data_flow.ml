@@ -41,24 +41,29 @@ end
    mshinwell: in practice I'm not sure this will make any difference *)
 type elt =
   { continuation : Continuation.t;
+    recursive : bool;
     params : Variable.t list;
     used_in_handler : Name_occurrences.t;
     apply_result_conts : Continuation.Set.t;
     bindings : Name_occurrences.t Name.Map.t;
     code_ids : Name_occurrences.t Code_id.Map.t;
     value_slots : Name_occurrences.t Name.Map.t Value_slot.Map.t;
-    apply_cont_args : Simple.Set.t Numeric_types.Int.Map.t Continuation.Map.t
+    apply_cont_args : Simple.Set.t Numeric_types.Int.Map.t Continuation.Map.t;
+    inside : Continuation.t option
   }
 
 type t =
   { stack : elt list;
     map : elt Continuation.Map.t;
-    extra : Continuation_extra_params_and_args.t Continuation.Map.t
+    extra : Continuation_extra_params_and_args.t Continuation.Map.t;
+    dummy_toplevel_cont : Continuation.t option
   }
 
 type result =
   { required_names : Name.Set.t;
-    reachable_code_ids : Reachable_code_ids.t
+    reachable_code_ids : Reachable_code_ids.t;
+    aliases : Variable.t Variable.Map.t;
+    required_new_args : Variable.Set.t Continuation.Map.t
   }
 
 (* Print *)
@@ -66,20 +71,23 @@ type result =
 
 let print_elt ppf
     { continuation;
+      recursive;
       params;
       used_in_handler;
       apply_result_conts;
       bindings;
       code_ids;
       value_slots;
-      apply_cont_args
+      apply_cont_args;
+      inside
     } =
   Format.fprintf ppf
-    "@[<hov 1>(@[<hov 1>(continuation %a)@]@ @[<hov 1>(params %a)@]@ @[<hov \
-     1>(used_in_handler %a)@]@ @[<hov 1>(apply_result_conts %a)@]@ @[<hov \
-     1>(bindings %a)@]@ @[<hov 1>(code_ids %a)@]@ @[<hov 1>(value_slots %a)@]@ \
-     @[<hov 1>(apply_cont_args %a)@])@]"
-    Continuation.print continuation
+    "@[<hov 1>(@[<hov 1>(continuation %a)@]@ @[<hov 1>(recursive %b)@]@ @[<hov \
+     1>(params %a)@]@ @[<hov 1>(used_in_handler %a)@]@ @[<hov \
+     1>(apply_result_conts %a)@]@ @[<hov 1>(bindings %a)@]@ @[<hov 1>(code_ids \
+     %a)@]@ @[<hov 1>(value_slots %a)@]@ @[<hov 1>(apply_cont_args %a)@])@ \
+     @[<hov 1>(inside %a)@])@]"
+    Continuation.print continuation recursive
     (Format.pp_print_list ~pp_sep:Format.pp_print_space Variable.print)
     params Name_occurrences.print used_in_handler Continuation.Set.print
     apply_result_conts
@@ -91,6 +99,8 @@ let print_elt ppf
     value_slots
     (Continuation.Map.print (Numeric_types.Int.Map.print Simple.Set.print))
     apply_cont_args
+    (Format.pp_print_option Continuation.print)
+    inside
 
 let print_stack ppf stack =
   Format.fprintf ppf "@[<v 1>(%a)@]"
@@ -102,7 +112,8 @@ let print_map ppf map = Continuation.Map.print print_elt ppf map
 let print_extra ppf extra =
   Continuation.Map.print Continuation_extra_params_and_args.print ppf extra
 
-let [@ocamlformat "disable"] print ppf { stack; map; extra } =
+let [@ocamlformat "disable"] print ppf
+  { stack; map; extra; dummy_toplevel_cont = _ } =
   Format.fprintf ppf
     "@[<hov 1>(\
       @[<hov 1>(stack %a)@]@ \
@@ -113,17 +124,28 @@ let [@ocamlformat "disable"] print ppf { stack; map; extra } =
     print_map map
     print_extra extra
 
-let _print_result ppf { required_names; reachable_code_ids } =
+let [@ocamlformat "disable"] _print_result ppf
+  { required_names; reachable_code_ids; aliases; required_new_args } =
   Format.fprintf ppf
-    "@[<hov 1>(@[<hov 1>(required_names@ %a)@]@ @[<hov 1>(reachable_code_ids@ \
-     %a)@])@]"
+    "@[<hov 1>(\
+      @[<hov 1>(required_names@ %a)@]@ \
+      @[<hov 1>(reachable_code_ids@ %a)@]@ \
+      @[<hov 1>(aliases@ %a)@]@ \
+      @[<hov 1>(required_new_args@ %a)@]\
+      )@]"
     Name.Set.print required_names Reachable_code_ids.print reachable_code_ids
+    (Variable.Map.print Variable.print) aliases
+    (Continuation.Map.print Variable.Set.print) required_new_args
 
 (* Creation *)
 (* ******** *)
 
 let empty =
-  { stack = []; map = Continuation.Map.empty; extra = Continuation.Map.empty }
+  { stack = [];
+    map = Continuation.Map.empty;
+    extra = Continuation.Map.empty;
+    dummy_toplevel_cont = None
+  }
 
 (* Updates *)
 (* ******* *)
@@ -138,22 +160,29 @@ let add_extra_params_and_args cont extra t =
   in
   { t with extra }
 
-let enter_continuation continuation params t =
+let enter_continuation continuation ~recursive params t =
+  let inside =
+    match t.stack with [] -> None | inside :: _ -> Some inside.continuation
+  in
   let elt =
     { continuation;
+      recursive;
       params;
       bindings = Name.Map.empty;
       code_ids = Code_id.Map.empty;
       value_slots = Value_slot.Map.empty;
       used_in_handler = Name_occurrences.empty;
       apply_cont_args = Continuation.Map.empty;
-      apply_result_conts = Continuation.Set.empty
+      apply_result_conts = Continuation.Set.empty;
+      inside
     }
   in
   { t with stack = elt :: t.stack }
 
 let init_toplevel continuation params _t =
-  enter_continuation continuation params empty
+  { (enter_continuation continuation ~recursive:false params empty) with
+    dummy_toplevel_cont = Some continuation
+  }
 
 let exit_continuation cont t =
   match t.stack with
@@ -291,6 +320,253 @@ let add_apply_cont_args cont args t =
       in
       { elt with apply_cont_args })
 
+(* Control flow *)
+(* ************ *)
+
+module Control_flow = struct
+  type c =
+    { prev : Continuation.Set.t Continuation.Map.t;
+      dummy_toplevel_cont : Continuation.t;
+      return_continuation : Continuation.t;
+      exn_continuation : Continuation.t;
+      recursive_continuations : Continuation.Set.t;
+      contains : Continuation.Set.t Continuation.Map.t
+          (* introduced_continuations : Continuation.Set.t; *)
+    }
+
+  let create ~return_continuation ~exn_continuation (t : t) =
+    let dummy_toplevel_cont =
+      match t.dummy_toplevel_cont with
+      | None -> assert false
+      | Some dummy_toplevel_cont -> dummy_toplevel_cont
+    in
+    let add (prev : Continuation.Set.t Continuation.Map.t) ~from ~to_ =
+      let set =
+        match Continuation.Map.find_opt to_ prev with
+        | None -> Continuation.Set.singleton from
+        | Some set -> Continuation.Set.add from set
+      in
+      Continuation.Map.add to_ set prev
+    in
+    let prev =
+      Continuation.Map.fold
+        (fun from (elt : elt) (prev : Continuation.Set.t Continuation.Map.t) ->
+          Continuation.Map.fold
+            (fun to_ _ prev -> add prev ~from ~to_)
+            elt.apply_cont_args prev)
+        t.map Continuation.Map.empty
+    in
+    let recursive_continuations =
+      Continuation.Map.fold
+        (fun cont (elt : elt) set ->
+          if elt.recursive then Continuation.Set.add cont set else set)
+        t.map Continuation.Set.empty
+    in
+    let contains =
+      Continuation.Map.fold
+        (fun _ (elt : elt) contains ->
+          match elt.inside with
+          | None -> contains
+          | Some inside ->
+            let set =
+              match Continuation.Map.find_opt inside contains with
+              | None -> Continuation.Set.singleton elt.continuation
+              | Some set -> Continuation.Set.add elt.continuation set
+            in
+            Continuation.Map.add inside set contains)
+        t.map Continuation.Map.empty
+    in
+    { dummy_toplevel_cont;
+      prev;
+      return_continuation;
+      exn_continuation;
+      recursive_continuations;
+      contains
+    }
+
+  (* module SCC_continuation = Strongly_connected_components.Make
+     (Continuation) *)
+
+  let only_variables simples =
+    Simple.Set.fold
+      (fun s acc ->
+        match Simple.must_be_var s with
+        | None -> acc
+        | Some (var, _) -> Variable.Set.add var acc)
+      simples Variable.Set.empty
+
+  let provided elt =
+    let bindings =
+      Name.Map.fold
+        (fun name _ set ->
+          Name.pattern_match name
+            ~var:(fun v -> Variable.Set.add v set)
+            ~symbol:(fun _ -> set))
+        elt.bindings Variable.Set.empty
+    in
+    List.fold_left (fun set var -> Variable.Set.add var set) bindings elt.params
+
+  let make_req t aliases =
+    Continuation.Map.filter_map
+      (fun _ (elt : elt) ->
+        let apply_cont_args =
+          Continuation.Map.fold
+            (fun _ im set ->
+              Numeric_types.Int.Map.fold
+                (fun _ args set -> Variable.Set.union (only_variables args) set)
+                im set)
+            elt.apply_cont_args Variable.Set.empty
+        in
+        let req =
+          Variable.Set.fold
+            (fun var req ->
+              match Variable.Map.find_opt var aliases with
+              | None -> req
+              | Some v -> Variable.Set.add v req)
+            apply_cont_args Variable.Set.empty
+        in
+        if Variable.Set.is_empty req then None else Some req)
+      t.map
+
+  let required_vars (t : t) (c : c) (req : Variable.Set.t Continuation.Map.t) =
+    (* let components =
+       SCC_continuation.connected_components_sorted_from_roots_to_leaf c.prev
+       in *)
+    let state = ref req in
+    let q = Queue.create () in
+    Continuation.Map.iter (fun cont _ -> Queue.push cont q) req;
+    while not (Queue.is_empty q) do
+      let cont = Queue.pop q in
+      let req = Continuation.Map.find cont !state in
+      let prev =
+        if Continuation.equal c.dummy_toplevel_cont cont
+        then Continuation.Set.empty
+        else
+          match Continuation.Map.find_opt cont c.prev with
+          | Some p -> p
+          | None ->
+            Format.eprintf "PREV: %a@. %a@." Continuation.print cont
+              (Continuation.Map.print Continuation.Set.print)
+              c.prev;
+            assert false
+      in
+      Continuation.Set.iter
+        (fun prev ->
+          let provided = provided (Continuation.Map.find prev t.map) in
+          let p_req =
+            match Continuation.Map.find_opt prev !state with
+            | None -> Variable.Set.empty
+            | Some s -> s
+          in
+          let new_req =
+            Variable.Set.diff (Variable.Set.union p_req req) provided
+          in
+          if not (Variable.Set.equal new_req p_req)
+          then begin
+            state := Continuation.Map.add prev new_req !state;
+            Queue.push prev q
+          end)
+        prev
+    done;
+    !state
+
+  let remove_scoped (t : t) (c : c) (req : Variable.Set.t Continuation.Map.t) =
+    let rec loop elt env req =
+      let env =
+        List.fold_left (fun set var -> Variable.Set.add var set) env elt.params
+      in
+      let req, env =
+        match Continuation.Map.find_opt elt.continuation req with
+        | None -> req, env
+        | Some set ->
+          let set = Variable.Set.diff set env in
+          let req =
+            if Variable.Set.is_empty set
+            then Continuation.Map.remove elt.continuation req
+            else Continuation.Map.add elt.continuation set req
+          in
+          let env = Variable.Set.union set env in
+          req, env
+      in
+      match Continuation.Map.find_opt elt.continuation c.contains with
+      | None -> req
+      | Some contained ->
+        Continuation.Set.fold
+          (fun cont req -> loop (Continuation.Map.find cont t.map) env req)
+          contained req
+    in
+    loop
+      (Continuation.Map.find c.dummy_toplevel_cont t.map)
+      Variable.Set.empty req
+
+  let insert_new_entry_points (_t : t) (c : c)
+      (req : Variable.Set.t Continuation.Map.t) :
+      Variable.Set.t Continuation.Map.t * Continuation.t Continuation.Map.t =
+    Continuation.Map.fold
+      (fun cont cont_req (req, new_conts) ->
+        if Continuation.Set.mem cont c.recursive_continuations
+        then
+          let new_cont =
+            Continuation.create ~sort:Normal_or_exn ~name:"rec_entry_point" ()
+          in
+          let req = Continuation.Map.remove cont req in
+          let req = Continuation.Map.add cont cont_req req in
+          let new_conts = Continuation.Map.add cont new_cont new_conts in
+          req, new_conts
+        else req, new_conts)
+      req (req, Continuation.Map.empty)
+
+  let print_edge ppf (from, to_) =
+    Format.fprintf ppf "@[<h 2>%s%i %s %s%i [ label=\"%s\"%s ] ;@]@ "
+      (Continuation.name from)
+      (Continuation.name_stamp from)
+      "->" (Continuation.name to_)
+      (Continuation.name_stamp to_)
+      "" (* label *) ""
+  (* style *)
+
+  let print_contains ppf (from, to_) =
+    Format.fprintf ppf "@[<h 2>%s%i %s %s%i [ label=\"%s\"%s ] ;@]@ "
+      (Continuation.name from)
+      (Continuation.name_stamp from)
+      "->" (Continuation.name to_)
+      (Continuation.name_stamp to_)
+      "" (* label *) "color=grey"
+
+  let print_vert ppf cont label =
+    Format.fprintf ppf
+      "@[<h 2>%s%i [ label=\"%s\" shape=\"record\" style=\"rounded, filled\" \
+       fillcolor=\"lightblue\"] ;@]@ "
+      (Continuation.name cont)
+      (Continuation.name_stamp cont)
+      label
+
+  let print_rec_vert ppf cont =
+    Format.fprintf ppf
+      "@[<h 2>%s%i [ style=\"filled\" fillcolor=\"lightyellow\"] ;@]@ "
+      (Continuation.name cont)
+      (Continuation.name_stamp cont)
+
+  let print_dot ppf c =
+    Format.fprintf ppf "@[<hov 2>digraph G {@ ";
+    print_vert ppf c.return_continuation "return";
+    print_vert ppf c.exn_continuation "exn";
+    print_vert ppf c.dummy_toplevel_cont "entry";
+    Continuation.Map.iter
+      (fun from set ->
+        if Continuation.Set.mem from c.recursive_continuations
+        then print_rec_vert ppf from;
+        Continuation.Set.iter (fun to_ -> print_edge ppf (from, to_)) set)
+      c.prev;
+    Continuation.Map.iter
+      (fun cont contained ->
+        Continuation.Set.iter
+          (fun contained -> print_contains ppf (cont, contained))
+          contained)
+      c.contains;
+    Format.fprintf ppf "}@]"
+end
+
 (* Alias graph *)
 (* *********** *)
 
@@ -331,13 +607,15 @@ module Alias_graph = struct
 
   let add_continuation_info map ~return_continuation ~exn_continuation _cont
       { apply_cont_args;
+        recursive = _;
         apply_result_conts = _;
         used_in_handler = _;
         bindings = _;
         code_ids = _;
         value_slots = _;
         continuation = _;
-        params = _
+        params = _;
+        inside = _
       } t =
     (* Build the graph of dependencies between continuation parameters and
        arguments. *)
@@ -350,20 +628,22 @@ module Alias_graph = struct
           | [(_idx, arg)] -> { t with return = Simple.Set.union arg t.return }
           | [] | _ :: _ :: _ -> assert false
         else if Continuation.equal k exn_continuation
-        then
+        then (
           let args = Numeric_types.Int.Map.bindings args in
           match args with
           | [(_idx, arg)] ->
             { t with exn_return = Simple.Set.union arg t.exn_return }
-          | [] ->
-            assert false
+          | [] -> assert false
           | _ :: _ :: _ ->
-            Format.eprintf "Cont: %a %a@." Continuation.print k Continuation.print exn_continuation;
+            Format.eprintf "Cont: %a %a@." Continuation.print k
+              Continuation.print exn_continuation;
             Format.eprintf "Args: %i@." (List.length args);
-            List.iter (fun (_, arg) ->
-                Format.eprintf "  %a@." Simple.Set.print arg)
+            List.iter
+              (fun (_, arg) -> Format.eprintf "  %a@." Simple.Set.print arg)
               args;
+            Format.eprintf "############################################@.";
             assert false
+          (* t *))
         else
           let params =
             match Continuation.Map.find k map with
@@ -511,6 +791,27 @@ module Alias_graph = struct
         if changed then loop state else state
       in
       loop (init g)
+
+    let first_dom dom =
+      (* TODO memoize *)
+      let rec find_root dom node set : Variable.t =
+        (* Format.printf "lookup %a %a@." Variable.print node Variable.Set.print
+         *   set; *)
+        let min = Variable.Set.min_elt set in
+        if Variable.equal min node
+        then
+          let max = Variable.Set.max_elt set in
+          if Variable.equal max node
+          then node
+          else find_root dom max (Variable.Map.find max dom)
+        else find_root dom min (Variable.Map.find min dom)
+      in
+      (* Variable.Map.mapi (find_root dom) dom *)
+      Variable.Map.filter_map
+        (fun node set ->
+          let alias = find_root dom node set in
+          if Variable.equal alias node then None else Some alias)
+        dom
   end
   (* type result = { aliases : Variable.t Variable.Map.t } *)
 end
@@ -566,7 +867,9 @@ module Dependency_graph = struct
             reachable_code_ids =
               { live_code_ids = code_id_enqueued;
                 ancestors_of_live_code_ids = older_enqueued
-              }
+              };
+            aliases = Variable.Map.empty;
+            required_new_args = Continuation.Map.empty;
           }
         else
           reachable_code_ids t code_id_queue code_id_enqueued (Queue.create ())
@@ -755,13 +1058,15 @@ module Dependency_graph = struct
   let add_continuation_info map ~return_continuation ~exn_continuation
       ~used_value_slots _
       { apply_cont_args;
+        recursive = _;
         apply_result_conts;
         used_in_handler;
         bindings;
         code_ids;
         value_slots;
         continuation = _;
-        params = _
+        params = _;
+        inside = _
       } t =
     (* Add the vars used in the handler *)
     let t = add_name_occurrences used_in_handler t in
@@ -942,8 +1247,11 @@ end
 (* Analysis *)
 (* ******** *)
 
+let already_printed = ref false
+
 let analyze ~return_continuation ~exn_continuation ~code_age_relation
-    ~used_value_slots { stack; map; extra } =
+    ~used_value_slots ~for_inlining
+    ({ stack; map; extra; dummy_toplevel_cont = _ } as t) =
   Profile.record_call ~accumulate:true "data_flow" (fun () ->
       assert (stack = []);
       let deps =
@@ -953,12 +1261,54 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
       (* Format.eprintf "/// graph@\n%a@\n@." Dependency_graph._print deps; *)
       let result = Dependency_graph.required_names deps in
       (* Format.eprintf "/// result@\n%a@\n@." _print_result result; *)
-      let _aliases =
-        Alias_graph.create map extra ~return_continuation ~exn_continuation
-      in
-      Format.eprintf "/// graph@\n%a@\n@." Alias_graph._print _aliases;
-      let _graph = Alias_graph.Dom.make_graph _aliases in
-      Format.eprintf "/// dom_graph@\n%a@\n@." Alias_graph.Dom._print _graph;
-      let _dom = Alias_graph.Dom.dom _graph in
-      Format.eprintf "/// dom@\n%a@\n@." Alias_graph.Dom._print_result _dom;
-      result)
+      if not for_inlining
+      then (
+        let _aliases =
+          Alias_graph.create map extra ~return_continuation ~exn_continuation
+        in
+        (* Format.eprintf "/// graph@\n%a@\n@." Alias_graph._print _aliases; *)
+        let _graph = Alias_graph.Dom.make_graph _aliases in
+        (* Format.eprintf "/// dom_graph@\n%a@\n@." Alias_graph.Dom._print
+           _graph; *)
+        let _dom = Alias_graph.Dom.dom _graph in
+        let _fdom = Alias_graph.Dom.first_dom _dom in
+
+        (* Format.eprintf "/// dom@\n%a@\n@." Alias_graph.Dom._print_result
+           _dom; *)
+        (* Format.eprintf "/// fdom@\n%a@\n@."
+         *   (Variable.Map.print Variable.print)
+         *   _fdom; *)
+        let _cg =
+          Control_flow.create t ~return_continuation ~exn_continuation
+        in
+        if not !already_printed
+        then begin
+          Format.printf "%a@." Control_flow.print_dot _cg;
+          already_printed := true
+        end;
+
+        let _req = Control_flow.make_req t _fdom in
+        let _req_trans = Control_flow.required_vars t _cg _req in
+        let _req_without_scoped = Control_flow.remove_scoped t _cg _req_trans in
+        let _req_with_new_cont, _new_conts = Control_flow.insert_new_entry_points t _cg _req_without_scoped in
+
+        Format.eprintf "REQQQ: %a@.RUQQQ: %a@.WITHOUT SCOPED: %a@.WITH NEW CONT: %a@."
+          (Continuation.Map.print Variable.Set.print)
+          _req
+          (Continuation.Map.print Variable.Set.print)
+          _req_trans
+          (Continuation.Map.print Variable.Set.print)
+          _req_without_scoped
+          (Continuation.Map.print Variable.Set.print)
+          _req_with_new_cont ;
+
+        let _prov =
+          Continuation.Map.map (fun elt -> Control_flow.provided elt) t.map
+        in
+
+        Format.eprintf "PROVIDED: %a@."
+          (Continuation.Map.print Variable.Set.print)
+          _prov;
+
+        { result with aliases = _fdom; required_new_args = _req_without_scoped })
+      else result)

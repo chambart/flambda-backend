@@ -71,14 +71,15 @@ and simplify_toplevel dacc expr ~return_continuation ~return_arity
             ( DA.code_age_relation dacc,
               Or_unknown.Known (DA.used_value_slots dacc) )
         in
-        let ({ required_names; reachable_code_ids } : Data_flow.result) =
+        let ({ required_names; reachable_code_ids; aliases; required_new_args }
+              : Data_flow.result) =
           try
             Data_flow.analyze data_flow ~code_age_relation ~used_value_slots
-              ~return_continuation ~exn_continuation
-          with
-            e ->
-            Format.eprintf "@.@.********************@.@.%a@.@.##############@.@."
-              DA.print dacc;
+              ~return_continuation ~exn_continuation ~for_inlining:false
+          with e ->
+            Format.eprintf
+              "@.@.********************@.@.%a@.@.##############@.@." DA.print
+              dacc;
             raise e
         in
         (* The code_id part of the data_flow analysis is correct only at
@@ -102,7 +103,7 @@ and simplify_toplevel dacc expr ~return_continuation ~return_arity
         in
         let uacc =
           UA.create ~required_names ~reachable_code_ids
-            ~compute_slot_offsets:true uenv dacc
+            ~compute_slot_offsets:true ~aliases ~required_new_args uenv dacc
         in
         rebuild uacc ~after_rebuild:(fun expr uacc -> expr, uacc))
   in

@@ -189,14 +189,24 @@ let record_new_defining_expression_binding_for_data_flow dacc data_flow
       | Simple _ | Set_of_closures _ | Rec_info _ -> true
       | Prim (prim, _) -> P.at_most_generative_effects prim
     in
+    (* if not can_be_removed
+     * then DF.add_used_in_current_handler free_names data_flow
+     * else
+     *   let generate_phantom_lets = DE.generate_phantom_lets (DA.denv dacc) in
+     *   Bound_pattern.fold_all_bound_vars binding.let_bound ~init:data_flow
+     *     ~f:(fun data_flow v ->
+     *       DF.record_var_binding (VB.var v) free_names ~generate_phantom_lets
+     *         data_flow) *)
+
+    let generate_phantom_lets = DE.generate_phantom_lets (DA.denv dacc) in
+    let data_flow = Bound_pattern.fold_all_bound_vars binding.let_bound ~init:data_flow
+        ~f:(fun data_flow v ->
+            DF.record_var_binding (VB.var v) free_names ~generate_phantom_lets
+              data_flow)
+    in
     if not can_be_removed
     then DF.add_used_in_current_handler free_names data_flow
-    else
-      let generate_phantom_lets = DE.generate_phantom_lets (DA.denv dacc) in
-      Bound_pattern.fold_all_bound_vars binding.let_bound ~init:data_flow
-        ~f:(fun data_flow v ->
-          DF.record_var_binding (VB.var v) free_names ~generate_phantom_lets
-            data_flow)
+    else data_flow
 
 let update_data_flow dacc closure_info ~lifted_constants_from_defining_expr
     simplify_named_result data_flow =

@@ -25,6 +25,8 @@ val create :
   required_names:Name.Set.t ->
   reachable_code_ids:Data_flow.Reachable_code_ids.t Or_unknown.t ->
   compute_slot_offsets:bool ->
+  aliases:Variable.t Variable.Map.t ->
+  required_new_args:Variable.Set.t Continuation.Map.t ->
   Upwards_env.t ->
   Downwards_acc.t ->
   t
@@ -101,3 +103,7 @@ val is_demoted_exn_handler : t -> Continuation.t -> bool
 val slot_offsets : t -> Slot_offsets.t Or_unknown.t
 
 val with_slot_offsets : t -> Slot_offsets.t Or_unknown.t -> t
+
+val aliases : t -> Variable.t Variable.Map.t
+
+val required_new_args : t -> Variable.Set.t Continuation.Map.t

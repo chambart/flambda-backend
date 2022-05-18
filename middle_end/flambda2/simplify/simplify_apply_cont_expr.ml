@@ -66,11 +66,12 @@ let inline_linearly_used_continuation uacc ~create_apply_cont ~params:params'
   in
   create_apply_cont ~apply_cont_to_expr
 
-let rebuild_apply_cont apply_cont ~args ~rewrite_id uacc ~after_rebuild =
+let rebuild_apply_cont apply_cont ~(args:Simple.t list) ~rewrite_id uacc ~after_rebuild =
   let uenv = UA.uenv uacc in
   let cont = AC.continuation apply_cont in
   let rewrite = UE.find_apply_cont_rewrite uenv cont in
   let cont = UE.resolve_continuation_aliases uenv cont in
+  let args = List.map (Simplify_common.rewrite_aliases uacc) args in
   let create_apply_cont ~apply_cont_to_expr =
     (* The function returned by this code accepts another function, which will
        be called with the [Apply_cont] expression after subjecting it to any

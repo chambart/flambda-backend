@@ -90,3 +90,6 @@ val specialise_array_kind :
   Flambda_primitive.Array_kind.t ->
   array_ty:Flambda2_types.t ->
   Flambda_primitive.Array_kind.t Or_bottom.t
+
+val rewrite_aliases :
+  Upwards_acc.t -> Simple.t -> Simple.t

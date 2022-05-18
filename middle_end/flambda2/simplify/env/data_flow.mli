@@ -43,7 +43,8 @@ val init_toplevel : Continuation.t -> Variable.t list -> t -> t
 
 (** Add a new continuation on the stack. Used when entering a continuation
     handler. *)
-val enter_continuation : Continuation.t -> Variable.t list -> t -> t
+val enter_continuation :
+  Continuation.t -> recursive:bool -> Variable.t list -> t -> t
 
 (** Pop the current top of the stack. Used when exiting the current continuation
     handler. *)
@@ -100,7 +101,9 @@ type result = private
   { required_names : Name.Set.t;
         (** The set of all variables that are in fact used to compute the
             returned value of the function being analyzed. *)
-    reachable_code_ids : Reachable_code_ids.t
+    reachable_code_ids : Reachable_code_ids.t;
+    aliases : Variable.t Variable.Map.t;
+    required_new_args : Variable.Set.t Continuation.Map.t
   }
 
 (** Analyze the uses. *)
@@ -109,5 +112,6 @@ val analyze :
   exn_continuation:Continuation.t ->
   code_age_relation:Code_age_relation.t ->
   used_value_slots:Name_occurrences.t Or_unknown.t ->
+  for_inlining:bool ->
   t ->
   result

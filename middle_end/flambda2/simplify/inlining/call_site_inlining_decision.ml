@@ -87,13 +87,23 @@ let speculative_inlining dacc ~apply ~function_type ~simplify_expr ~return_arity
            Thus we here provide empty/dummy values for the used_value_slots and
            code_age_relation, and ignore the reachable_code_id part of the
            data_flow analysis. *)
-        let ({ required_names; reachable_code_ids = _ } : Data_flow.result) =
+        let ({ required_names;
+               reachable_code_ids = _;
+               aliases;
+               required_new_args;
+             }
+              : Data_flow.result) =
           try
-          Data_flow.analyze data_flow ~code_age_relation:Code_age_relation.empty
-            ~used_value_slots:Unknown ~return_continuation:function_return_cont
-            ~exn_continuation:(Exn_continuation.exn_handler exn_continuation)
+            Data_flow.analyze data_flow
+              ~code_age_relation:Code_age_relation.empty
+              ~used_value_slots:Unknown
+              ~return_continuation:function_return_cont
+              ~exn_continuation:(Exn_continuation.exn_handler exn_continuation)
+              ~for_inlining:true
           with e ->
-            Format.eprintf "@.@.********************@.Specul Inlining@.@.%a@.@.##############@.@."
+            Format.eprintf
+              "@.@.********************@.Specul \
+               Inlining@.@.%a@.@.##############@.@."
               DA.print dacc;
             raise e
         in
@@ -118,7 +128,7 @@ let speculative_inlining dacc ~apply ~function_type ~simplify_expr ~return_arity
         in
         let uacc =
           UA.create ~required_names ~reachable_code_ids:Unknown
-            ~compute_slot_offsets:false uenv dacc
+            ~compute_slot_offsets:false ~aliases ~required_new_args uenv dacc
         in
         rebuild uacc ~after_rebuild:(fun expr uacc -> expr, uacc))
   in
