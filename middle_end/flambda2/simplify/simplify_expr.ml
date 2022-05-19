@@ -48,7 +48,8 @@ and simplify_toplevel dacc expr ~return_continuation ~return_arity
     Continuation.create ~name:"dummy_toplevel_continuation" ()
   in
   let dacc =
-    DA.map_data_flow dacc ~f:(Data_flow.init_toplevel dummy_toplevel_cont [])
+    (* TODO: add the actual set of function arguments (when this is a function) *)
+    DA.map_data_flow dacc ~f:(Data_flow.init_toplevel dummy_toplevel_cont Bound_parameters.empty)
   in
   let expr, uacc =
     simplify_expr dacc expr ~down_to_up:(fun dacc ~rebuild ->

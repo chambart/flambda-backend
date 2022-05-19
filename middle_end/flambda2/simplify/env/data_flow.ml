@@ -42,7 +42,7 @@ end
 type elt =
   { continuation : Continuation.t;
     recursive : bool;
-    params : Variable.t list;
+    params : Bound_parameters.t;
     used_in_handler : Name_occurrences.t;
     apply_result_conts : Continuation.Set.t;
     bindings : Name_occurrences.t Name.Map.t;
@@ -88,8 +88,7 @@ let print_elt ppf
      %a)@]@ @[<hov 1>(value_slots %a)@]@ @[<hov 1>(apply_cont_args %a)@])@ \
      @[<hov 1>(inside %a)@])@]"
     Continuation.print continuation recursive
-    (Format.pp_print_list ~pp_sep:Format.pp_print_space Variable.print)
-    params Name_occurrences.print used_in_handler Continuation.Set.print
+    Bound_parameters.print params Name_occurrences.print used_in_handler Continuation.Set.print
     apply_result_conts
     (Name.Map.print Name_occurrences.print)
     bindings
@@ -404,7 +403,8 @@ module Control_flow = struct
             ~symbol:(fun _ -> set))
         elt.bindings Variable.Set.empty
     in
-    List.fold_left (fun set var -> Variable.Set.add var set) bindings elt.params
+    List.fold_left (fun set var -> Variable.Set.add var set) bindings
+      (Bound_parameters.vars elt.params)
 
   let make_req t aliases =
     Continuation.Map.filter_map
@@ -473,7 +473,8 @@ module Control_flow = struct
   let remove_scoped (t : t) (c : c) (req : Variable.Set.t Continuation.Map.t) =
     let rec loop elt env req =
       let env =
-        List.fold_left (fun set var -> Variable.Set.add var set) env elt.params
+        List.fold_left (fun set var -> Variable.Set.add var set) env
+          (Bound_parameters.vars elt.params)
       in
       let req, env =
         match Continuation.Map.find_opt elt.continuation req with
@@ -647,7 +648,7 @@ module Alias_graph = struct
         else
           let params =
             match Continuation.Map.find k map with
-            | elt -> Array.of_list elt.params
+            | elt -> Array.of_list (Bound_parameters.vars elt.params)
             | exception Not_found ->
               Misc.fatal_errorf "Continuation not found during Data_flow: %a@."
                 Continuation.print k
@@ -1097,7 +1098,7 @@ module Dependency_graph = struct
       Continuation.Set.fold
         (fun k t ->
           match Continuation.Map.find k map with
-          | elt -> List.fold_left add_var_used t elt.params
+          | elt -> List.fold_left add_var_used t (Bound_parameters.vars elt.params)
           | exception Not_found ->
             if Continuation.equal return_continuation k
                || Continuation.equal exn_continuation k
@@ -1140,7 +1141,7 @@ module Dependency_graph = struct
         else
           let params =
             match Continuation.Map.find k map with
-            | elt -> Array.of_list elt.params
+            | elt -> Array.of_list (Bound_parameters.vars elt.params)
             | exception Not_found ->
               Misc.fatal_errorf "Continuation not found during Data_flow: %a@."
                 Continuation.print k
