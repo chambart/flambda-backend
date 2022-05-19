@@ -56,7 +56,8 @@ type t =
   { stack : elt list;
     map : elt Continuation.Map.t;
     extra : Continuation_extra_params_and_args.t Continuation.Map.t;
-    dummy_toplevel_cont : Continuation.t option
+    dummy_toplevel_cont : Continuation.t option;
+    kinds : Flambda_kind.With_subkind.t Variable.Map.t;
   }
 
 type result =
@@ -112,7 +113,7 @@ let print_extra ppf extra =
   Continuation.Map.print Continuation_extra_params_and_args.print ppf extra
 
 let [@ocamlformat "disable"] print ppf
-  { stack; map; extra; dummy_toplevel_cont = _ } =
+  { stack; map; extra; dummy_toplevel_cont = _; kinds = _ } =
   Format.fprintf ppf
     "@[<hov 1>(\
       @[<hov 1>(stack %a)@]@ \
@@ -143,7 +144,8 @@ let empty =
   { stack = [];
     map = Continuation.Map.empty;
     extra = Continuation.Map.empty;
-    dummy_toplevel_cont = None
+    dummy_toplevel_cont = None;
+    kinds = Variable.Map.empty;
   }
 
 (* Updates *)
@@ -176,7 +178,13 @@ let enter_continuation continuation ~recursive params t =
       inside
     }
   in
-  { t with stack = elt :: t.stack }
+  let kinds =
+    List.fold_left (fun kinds bp ->
+        Variable.Map.add (Bound_parameter.var bp) (Bound_parameter.kind bp) kinds)
+      t.kinds
+      (Bound_parameters.to_list params)
+  in
+  { t with kinds; stack = elt :: t.stack }
 
 let init_toplevel continuation params _t =
   { (enter_continuation continuation ~recursive:false params empty) with
@@ -196,7 +204,11 @@ let update_top_of_stack ~t ~f =
   | [] -> Misc.fatal_errorf "Empty stack of variable uses"
   | elt :: stack -> { t with stack = f elt :: stack }
 
-let record_var_binding var name_occurrences ~generate_phantom_lets t =
+let insert_kind var kind t =
+  { t with kinds = Variable.Map.add var kind t.kinds }
+
+let record_var_binding var kind name_occurrences ~generate_phantom_lets t =
+  insert_kind var kind @@
   update_top_of_stack ~t ~f:(fun elt ->
       let bindings =
         Name.Map.update (Name.var var)
@@ -1258,7 +1270,7 @@ let already_printed = ref false
 
 let analyze ~return_continuation ~exn_continuation ~code_age_relation
     ~used_value_slots ~for_inlining
-    ({ stack; map; extra; dummy_toplevel_cont = _ } as t) =
+    ({ stack; map; extra; kinds; dummy_toplevel_cont = _ } as t) =
   Profile.record_call ~accumulate:true "data_flow" (fun () ->
       assert (stack = []);
       let deps =
@@ -1282,9 +1294,9 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
 
         (* Format.eprintf "/// dom@\n%a@\n@." Alias_graph.Dom._print_result
            _dom; *)
-        (* Format.eprintf "/// fdom@\n%a@\n@."
-         *   (Variable.Map.print Variable.print)
-         *   _fdom; *)
+        Format.eprintf "/// substitutions@\n%a@\n@."
+          (Variable.Map.print Variable.print)
+          _fdom;
         let _cg =
           Control_flow.create t ~return_continuation ~exn_continuation
         in
@@ -1312,13 +1324,12 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
           (Continuation.Map.print Variable.Set.print)
           _req_with_new_cont;
 
-        let _prov =
-          Continuation.Map.map (fun elt -> Control_flow.provided elt) t.map
-        in
-
-        Format.eprintf "PROVIDED: %a@."
-          (Continuation.Map.print Variable.Set.print)
-          _prov;
+        (* let _prov =
+         *   Continuation.Map.map (fun elt -> Control_flow.provided elt) t.map
+         * in
+         * Format.eprintf "PROVIDED: %a@."
+         *   (Continuation.Map.print Variable.Set.print)
+         *   _prov; *)
 
         let required_new_args =
           Continuation.Map.map
@@ -1326,12 +1337,15 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
               Bound_parameters.create
               @@ List.map
                    (fun v ->
-                     Bound_parameter.create v
-                       (* /!\ TODO use the actual kind *)
-                       Flambda_kind.With_subkind.any_value)
+                    let kind_with_subkind = Variable.Map.find v kinds in
+                    Bound_parameter.create v kind_with_subkind)
                    (Variable.Set.elements req))
             (* TODO: use _req_with_new_cont *)
             _req_without_scoped
         in
-        { result with aliases = _fdom; required_new_args })
+
+        ignore required_new_args;
+        (* result *)
+        { result with aliases = _fdom; required_new_args }
+      )
       else result)

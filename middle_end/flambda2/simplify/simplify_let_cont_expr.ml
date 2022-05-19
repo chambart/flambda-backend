@@ -692,9 +692,7 @@ let after_downwards_traversal_of_non_recursive_let_cont_body ~simplify_expr
     dacc_after_body ~rebuild:rebuild_body =
   let dacc_after_body =
     DA.map_data_flow dacc_after_body
-      ~f:
-        (Data_flow.enter_continuation cont ~recursive:false
-           params)
+      ~f:(Data_flow.enter_continuation cont ~recursive:false params)
   in
   (* Before the upwards traversal of the body, we do the downwards traversal of
      the handler. *)
@@ -875,9 +873,7 @@ let simplify_recursive_let_cont_handlers ~simplify_expr ~denv_before_body
     ~original_cont_scope ~down_to_up =
   let dacc_after_body =
     DA.map_data_flow dacc_after_body
-      ~f:
-        (Data_flow.enter_continuation cont ~recursive:true
-           params)
+      ~f:(Data_flow.enter_continuation cont ~recursive:true params)
   in
   let denv, _arg_types =
     (* XXX These don't have the same scope level as the non-recursive case *)

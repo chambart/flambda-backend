@@ -201,7 +201,10 @@ let record_new_defining_expression_binding_for_data_flow dacc data_flow
     let generate_phantom_lets = DE.generate_phantom_lets (DA.denv dacc) in
     let data_flow = Bound_pattern.fold_all_bound_vars binding.let_bound ~init:data_flow
         ~f:(fun data_flow v ->
-            DF.record_var_binding (VB.var v) free_names ~generate_phantom_lets
+            let ty = Typing_env.find (DA.typing_env dacc) (Name.var (VB.var v)) None in
+            let kind = Flambda2_types.kind ty in
+            let kind_with_subkind = Flambda_kind.With_subkind.create kind Anything in
+            DF.record_var_binding (VB.var v) kind_with_subkind free_names ~generate_phantom_lets
               data_flow)
     in
     if not can_be_removed

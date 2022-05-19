@@ -52,7 +52,7 @@ val exit_continuation : Continuation.t -> t -> t
 
 (** Add a variable binding from the current handler. *)
 val record_var_binding :
-  Variable.t -> Name_occurrences.t -> generate_phantom_lets:bool -> t -> t
+  Variable.t -> Flambda_kind.With_subkind.t -> Name_occurrences.t -> generate_phantom_lets:bool -> t -> t
 
 (** Add a variable binding to the symbol. Projections might get recorded
     multiple times. *)
