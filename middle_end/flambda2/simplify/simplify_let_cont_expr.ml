@@ -23,24 +23,19 @@ type used_extra_params =
     extra_params_not_used_as_normal : BP.t list
   }
 
-let add_alias_extra_params (required_new_args : Variable.Set.t)
+let add_alias_extra_params (required_new_args : Bound_parameters.t)
     (extra_params_and_args : EPA.t) : EPA.t =
-  let args : Variable.t list = Variable.Set.elements required_new_args in
   let as_extra_args =
-    List.map (fun v -> EPA.Extra_arg.Already_in_scope (Simple.var v)) args
+    List.map (fun v -> EPA.Extra_arg.Already_in_scope (Simple.var v))
+      (Bound_parameters.vars required_new_args)
   in
   let extra_args =
     Apply_cont_rewrite_id.Map.map
       (fun extra_args -> as_extra_args @ extra_args)
       extra_params_and_args.extra_args
   in
-  let bound_parameters =
-    (* /!\ TODO Mettre le bon kind /!\ *)
-    Bound_parameters.create
-      (List.map (fun v -> BP.create v Flambda_kind.With_subkind.any_value) args)
-  in
   { extra_params =
-      Bound_parameters.append bound_parameters
+      Bound_parameters.append required_new_args
         extra_params_and_args.extra_params;
     extra_args
   }
@@ -168,7 +163,7 @@ let rebuild_one_continuation_handler cont ~at_unit_toplevel
         ~body:handler
   in
   let extra_params_and_args =
-    match Continuation.Map.find_opt cont (UA.required_new_args uacc) with
+    match UA.required_new_args uacc cont with
     | None -> extra_params_and_args
     | Some required_new_args ->
       add_alias_extra_params required_new_args extra_params_and_args

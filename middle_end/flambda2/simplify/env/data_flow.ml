@@ -63,7 +63,7 @@ type result =
   { required_names : Name.Set.t;
     reachable_code_ids : Reachable_code_ids.t;
     aliases : Variable.t Variable.Map.t;
-    required_new_args : Variable.Set.t Continuation.Map.t
+    required_new_args : Bound_parameters.t Continuation.Map.t
   }
 
 (* Print *)
@@ -87,8 +87,8 @@ let print_elt ppf
      1>(apply_result_conts %a)@]@ @[<hov 1>(bindings %a)@]@ @[<hov 1>(code_ids \
      %a)@]@ @[<hov 1>(value_slots %a)@]@ @[<hov 1>(apply_cont_args %a)@])@ \
      @[<hov 1>(inside %a)@])@]"
-    Continuation.print continuation recursive
-    Bound_parameters.print params Name_occurrences.print used_in_handler Continuation.Set.print
+    Continuation.print continuation recursive Bound_parameters.print params
+    Name_occurrences.print used_in_handler Continuation.Set.print
     apply_result_conts
     (Name.Map.print Name_occurrences.print)
     bindings
@@ -134,7 +134,7 @@ let [@ocamlformat "disable"] _print_result ppf
       )@]"
     Name.Set.print required_names Reachable_code_ids.print reachable_code_ids
     (Variable.Map.print Variable.print) aliases
-    (Continuation.Map.print Variable.Set.print) required_new_args
+    (Continuation.Map.print Bound_parameters.print) required_new_args
 
 (* Creation *)
 (* ******** *)
@@ -403,7 +403,9 @@ module Control_flow = struct
             ~symbol:(fun _ -> set))
         elt.bindings Variable.Set.empty
     in
-    List.fold_left (fun set var -> Variable.Set.add var set) bindings
+    List.fold_left
+      (fun set var -> Variable.Set.add var set)
+      bindings
       (Bound_parameters.vars elt.params)
 
   let make_req t aliases =
@@ -473,7 +475,9 @@ module Control_flow = struct
   let remove_scoped (t : t) (c : c) (req : Variable.Set.t Continuation.Map.t) =
     let rec loop elt env req =
       let env =
-        List.fold_left (fun set var -> Variable.Set.add var set) env
+        List.fold_left
+          (fun set var -> Variable.Set.add var set)
+          env
           (Bound_parameters.vars elt.params)
       in
       let req, env =
@@ -515,7 +519,8 @@ module Control_flow = struct
           let new_conts = Continuation.Map.add cont new_cont new_conts in
           req, new_conts
         else req, new_conts)
-      req (req, Continuation.Map.empty)
+      req
+      (req, Continuation.Map.empty)
 
   let print_edge ppf (from, to_) =
     Format.fprintf ppf "@[<h 2>%s%i %s %s%i [ label=\"%s\"%s ] ;@]@ "
@@ -870,7 +875,7 @@ module Dependency_graph = struct
                 ancestors_of_live_code_ids = older_enqueued
               };
             aliases = Variable.Map.empty;
-            required_new_args = Continuation.Map.empty;
+            required_new_args = Continuation.Map.empty
           }
         else
           reachable_code_ids t code_id_queue code_id_enqueued (Queue.create ())
@@ -1098,7 +1103,8 @@ module Dependency_graph = struct
       Continuation.Set.fold
         (fun k t ->
           match Continuation.Map.find k map with
-          | elt -> List.fold_left add_var_used t (Bound_parameters.vars elt.params)
+          | elt ->
+            List.fold_left add_var_used t (Bound_parameters.vars elt.params)
           | exception Not_found ->
             if Continuation.equal return_continuation k
                || Continuation.equal exn_continuation k
@@ -1291,9 +1297,12 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
         let _req = Control_flow.make_req t _fdom in
         let _req_trans = Control_flow.required_vars t _cg _req in
         let _req_without_scoped = Control_flow.remove_scoped t _cg _req_trans in
-        let _req_with_new_cont, _new_conts = Control_flow.insert_new_entry_points t _cg _req_without_scoped in
+        let _req_with_new_cont, _new_conts =
+          Control_flow.insert_new_entry_points t _cg _req_without_scoped
+        in
 
-        Format.eprintf "REQQQ: %a@.RUQQQ: %a@.WITHOUT SCOPED: %a@.WITH NEW CONT: %a@."
+        Format.eprintf
+          "REQQQ: %a@.RUQQQ: %a@.WITHOUT SCOPED: %a@.WITH NEW CONT: %a@."
           (Continuation.Map.print Variable.Set.print)
           _req
           (Continuation.Map.print Variable.Set.print)
@@ -1301,7 +1310,7 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
           (Continuation.Map.print Variable.Set.print)
           _req_without_scoped
           (Continuation.Map.print Variable.Set.print)
-          _req_with_new_cont ;
+          _req_with_new_cont;
 
         let _prov =
           Continuation.Map.map (fun elt -> Control_flow.provided elt) t.map
@@ -1311,5 +1320,18 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
           (Continuation.Map.print Variable.Set.print)
           _prov;
 
-        { result with aliases = _fdom; required_new_args = _req_without_scoped })
+        let required_new_args =
+          Continuation.Map.map
+            (fun req ->
+              Bound_parameters.create
+              @@ List.map
+                   (fun v ->
+                     Bound_parameter.create v
+                       (* /!\ TODO use the actual kind *)
+                       Flambda_kind.With_subkind.any_value)
+                   (Variable.Set.elements req))
+            (* TODO: use _req_with_new_cont *)
+            _req_without_scoped
+        in
+        { result with aliases = _fdom; required_new_args })
       else result)

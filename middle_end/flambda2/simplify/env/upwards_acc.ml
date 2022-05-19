@@ -40,7 +40,7 @@ type t =
     demoted_exn_handlers : Continuation.Set.t;
     slot_offsets : Slot_offsets.t Or_unknown.t;
     aliases : Variable.t Variable.Map.t;
-    required_new_args : Variable.Set.t Continuation.Map.t
+    required_new_args : Bound_parameters.t Continuation.Map.t
   }
 
 let [@ocamlformat "disable"] print ppf
@@ -80,7 +80,7 @@ let [@ocamlformat "disable"] print ppf
     Continuation.Set.print demoted_exn_handlers
     (Or_unknown.print Slot_offsets.print) slot_offsets
     (Variable.Map.print Variable.print) aliases
-    (Continuation.Map.print Variable.Set.print) required_new_args
+    (Continuation.Map.print Bound_parameters.print) required_new_args
 
 let create ~required_names ~reachable_code_ids ~compute_slot_offsets ~aliases
     ~required_new_args uenv dacc =
@@ -210,4 +210,5 @@ let with_slot_offsets t slot_offsets = { t with slot_offsets }
 
 let aliases t = t.aliases
 
-let required_new_args t = t.required_new_args
+let required_new_args t cont =
+  Continuation.Map.find_opt cont t.required_new_args

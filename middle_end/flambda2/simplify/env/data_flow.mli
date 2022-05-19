@@ -103,7 +103,7 @@ type result = private
             returned value of the function being analyzed. *)
     reachable_code_ids : Reachable_code_ids.t;
     aliases : Variable.t Variable.Map.t;
-    required_new_args : Variable.Set.t Continuation.Map.t
+    required_new_args : Bound_parameters.t Continuation.Map.t
   }
 
 (** Analyze the uses. *)
