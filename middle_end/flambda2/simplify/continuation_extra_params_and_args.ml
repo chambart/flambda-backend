@@ -63,9 +63,20 @@ let empty =
     extra_args = Apply_cont_rewrite_id.Map.empty
   }
 
+let empty_from_uses uses =
+  let extra_args =
+    List.fold_left (fun map use ->
+        Apply_cont_rewrite_id.Map.add use [] map)
+      Apply_cont_rewrite_id.Map.empty
+      uses
+  in
+  { extra_params = Bound_parameters.empty;
+    extra_args }
+
 let is_empty t =
   if Bound_parameters.is_empty t.extra_params
   then (
+    (* TODO changer cet invariant ! *)
     assert (Apply_cont_rewrite_id.Map.is_empty t.extra_args);
     true)
   else false

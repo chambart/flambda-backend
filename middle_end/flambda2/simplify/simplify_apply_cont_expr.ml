@@ -71,7 +71,14 @@ let rebuild_apply_cont apply_cont ~(args:Simple.t list) ~rewrite_id uacc ~after_
   let cont = AC.continuation apply_cont in
   let rewrite = UE.find_apply_cont_rewrite uenv cont in
   let cont = UE.resolve_continuation_aliases uenv cont in
-  let args = List.map (Simplify_common.rewrite_aliases uacc) args in
+  (* Format.eprintf "rewrite apply_cont %a args %a => "
+   *   Continuation.print cont
+   *   (Format.pp_print_list ~pp_sep:(fun ppf () -> Format.fprintf ppf "; ") Simple.print)
+   *   args; *)
+  (* let args = List.map (Simplify_common.rewrite_aliases uacc) args in *)
+  (* Format.eprintf "%a@."
+   *   (Format.pp_print_list ~pp_sep:(fun ppf () -> Format.fprintf ppf "; ") Simple.print)
+   *   args; *)
   let create_apply_cont ~apply_cont_to_expr =
     (* The function returned by this code accepts another function, which will
        be called with the [Apply_cont] expression after subjecting it to any

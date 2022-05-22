@@ -1,10 +1,16 @@
 
-* Gérer correctement le kind des arguments introduits
+# Gérer correctement le kind des arguments introduits
+* Nettoyers les substitutions hors de expr_builder
+* Gerer les substitutions dans les extra args
+* Gerer les substitutions dans switch
+* S'assurer qu'un apply_cont_rewrite n'est jamais vide
+  (nouvel invariant: les extra_args doit toujours être le set de tous les appels)
 * Gérer l'introduction de continuation de point d'entrée de boucle
   (Pas nescessaire pour la correction)
   * Si pas faire ça ^^: Vérifier (et gerer si ce n'est pas le cas)
     que les argument additionnel sont gérés dans les continuations récursives
 * Refaire les algos d'analyse de data_flow avec une complexité décente
+* Gérer tous les arguments des continuations: en particulier les cas spéciaux de switch
 * Faire les substitutions partout: pas que dans les arguments de continuation
 * Gérer l'interraction avec les variable morte
 * Renomer les champs required_new_args vers quelquechose de correct

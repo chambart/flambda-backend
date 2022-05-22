@@ -40,6 +40,9 @@ type t =
 val print : Format.formatter -> t -> unit
 
 val empty : t
+(* TODO? remove empty *)
+
+val empty_from_uses : Apply_cont_rewrite_id.t list -> t
 
 val is_empty : t -> bool
 

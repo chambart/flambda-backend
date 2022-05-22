@@ -144,7 +144,7 @@ let compute_handler_env ?unknown_if_defined_at_or_later_than uses
   in
   let arg_types_by_use_id = Continuation_uses.get_arg_types_by_use_id uses in
   match use_envs_with_ids with
-  | [(use_env, _, Inlinable)] ->
+  | [(use_env, use_id, Inlinable)] ->
     (* There is only one use of the continuation and it is inlinable. No join
        calculations are required.
 
@@ -162,7 +162,7 @@ let compute_handler_env ?unknown_if_defined_at_or_later_than uses
     Uses
       { handler_env;
         arg_types_by_use_id;
-        extra_params_and_args = Continuation_extra_params_and_args.empty;
+        extra_params_and_args = Continuation_extra_params_and_args.empty_from_uses [use_id];
         is_single_inlinable_use = true;
         escapes = false
       }
@@ -187,7 +187,9 @@ let compute_handler_env ?unknown_if_defined_at_or_later_than uses
       then
         join ?unknown_if_defined_at_or_later_than denv typing_env params
           ~env_at_fork_plus_params ~consts_lifted_during_body ~use_envs_with_ids
-      else denv, Continuation_extra_params_and_args.empty
+      else
+        let use_ids = List.map (fun (_, use_id, _) -> use_id) use_envs_with_ids in
+        denv, Continuation_extra_params_and_args.empty_from_uses use_ids
     in
     let handler_env =
       DE.map_typing_env handler_env ~f:(fun handler_env ->

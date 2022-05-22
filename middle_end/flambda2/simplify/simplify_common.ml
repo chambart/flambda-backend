@@ -368,13 +368,13 @@ let specialise_array_kind dacc (array_kind : P.Array_kind.t) ~array_ty :
     | Proved Compatible | Unknown -> Ok array_kind
     | Proved Incompatible | Invalid -> Bottom)
 
-let rewrite_aliases uacc simple =
-  Simple.pattern_match' simple
-    ~symbol:(fun _ ~coercion:_ -> simple)
-    ~const:(fun _ -> simple)
-    ~var:(fun var ~coercion:_ ->
-        match Variable.Map.find_opt var (UA.aliases uacc) with
-        | None -> simple
-        | Some alias ->
-          (* TODO check scope *)
-          Simple.var alias)
+(* let rewrite_aliases uacc simple =
+ *   Simple.pattern_match' simple
+ *     ~symbol:(fun _ ~coercion:_ -> simple)
+ *     ~const:(fun _ -> simple)
+ *     ~var:(fun var ~coercion:_ ->
+ *         match Variable.Map.find_opt var (UA.aliases uacc) with
+ *         | None -> simple
+ *         | Some alias ->
+ *           (\* TODO check scope *\)
+ *           Simple.var alias) *)

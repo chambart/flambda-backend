@@ -20,6 +20,16 @@ open! Simplify_import
 
 let rebuild_arm uacc arm (action, use_id, arity)
     (new_let_conts, arms, identity_arms, not_arms) =
+  (* let action =
+   *   let args = List.map (Simplify_common.rewrite_aliases uacc) (AC.args action) in
+   *   Format.eprintf "rewrite switch %a args %a => %a@."
+   *     Continuation.print (AC.continuation action)
+   *     (Format.pp_print_list ~pp_sep:(fun ppf () -> Format.fprintf ppf "; ") Simple.print)
+   *     (AC.args action)
+   *     (Format.pp_print_list ~pp_sep:(fun ppf () -> Format.fprintf ppf "; ") Simple.print)
+   *     args;
+   *   AC.update_args ~args action
+   * in *)
   let action =
     Simplify_common.clear_demoted_trap_action_and_patch_unused_exn_bucket uacc
       action

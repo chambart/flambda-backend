@@ -25,20 +25,28 @@ type used_extra_params =
 
 let add_alias_extra_params (required_new_args : Bound_parameters.t)
     (extra_params_and_args : EPA.t) : EPA.t =
-  let as_extra_args =
-    List.map (fun v -> EPA.Extra_arg.Already_in_scope (Simple.var v))
-      (Bound_parameters.vars required_new_args)
-  in
-  let extra_args =
-    Apply_cont_rewrite_id.Map.map
-      (fun extra_args -> as_extra_args @ extra_args)
-      extra_params_and_args.extra_args
-  in
-  { extra_params =
-      Bound_parameters.append required_new_args
-        extra_params_and_args.extra_params;
-    extra_args
-  }
+  (* if Apply_cont_rewrite_id.Map.is_empty extra_params_and_args.extra_args
+   * then
+   *   (\* CR is this correct ? This is correct only if
+   *      extra_params_and_args.extra_args is empty if the continuation has no
+   *      uses (and will be removed ?) *\)
+   *   extra_params_and_args
+   * else *)
+    let as_extra_args =
+      List.map
+        (fun v -> EPA.Extra_arg.Already_in_scope (Simple.var v))
+        (Bound_parameters.vars required_new_args)
+    in
+    let extra_args =
+      Apply_cont_rewrite_id.Map.map
+        (fun extra_args -> as_extra_args @ extra_args)
+        extra_params_and_args.extra_args
+    in
+    { extra_params =
+        Bound_parameters.append required_new_args
+          extra_params_and_args.extra_params;
+      extra_args
+    }
 
 let compute_used_extra_params uacc (extra_params_and_args : EPA.t)
     ~is_single_inlinable_use ~free_names ~handler =
@@ -393,6 +401,7 @@ let simplify_non_recursive_let_cont_handler ~simplify_expr ~denv_before_body
   in
   match uses with
   | No_uses ->
+    Format.printf "@.@.@.NOOOOOOOOOOOOOOOOOOOOO UUUUUUUUUUUUUUUSEEEES@.@.@.";
     (* Don't simplify the handler if there aren't any uses: otherwise, its code
        will be deleted but any continuation usage information collected during
        its simplification will remain. *)
@@ -426,6 +435,7 @@ let simplify_non_recursive_let_cont_handler ~simplify_expr ~denv_before_body
         is_single_inlinable_use;
         escapes
       } ->
+    Format.eprintf "EPA: %a@." EPA.print extra_params_and_args;
     let handler_env, extra_params_and_args, is_exn_handler, dacc =
       match Continuation.sort cont with
       | Normal_or_exn when is_single_inlinable_use ->

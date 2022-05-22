@@ -27,6 +27,17 @@ module UE = Upwards_env
 module DA = Downwards_acc
 module VB = Bound_var
 
+let rewrite_aliases uacc simple =
+  Simple.pattern_match' simple
+    ~symbol:(fun _ ~coercion:_ -> simple)
+    ~const:(fun _ -> simple)
+    ~var:(fun var ~coercion:_ ->
+        match Variable.Map.find_opt var (UA.aliases uacc) with
+        | None -> simple
+        | Some alias ->
+          (* TODO check scope *)
+          Simple.var alias)
+
 type let_creation_result =
   | Defining_expr_deleted_at_compile_time
   | Defining_expr_deleted_at_runtime
@@ -700,6 +711,8 @@ let rewrite_use uacc rewrite ~ctx id apply_cont : rewrite_use_result =
       extra_args_list
   in
   let args = args @ List.rev extra_args_rev in
+  (* ignore rewrite_aliases; *)
+  let args = List.map (rewrite_aliases uacc) args in
   let apply_cont = Apply_cont.update_args apply_cont ~args in
   match extra_lets with
   | [] -> Apply_cont apply_cont
@@ -770,6 +783,7 @@ let rewrite_exn_continuation rewrite id exn_cont =
       used_extra_params extra_args_list
   in
   let extra_args = extra_args0 @ extra_args1 in
+  (* let extra_args = List.map (rewrite_aliases uacc) extra_args in *)
   Exn_continuation.create
     ~exn_handler:(Exn_continuation.exn_handler exn_cont)
     ~extra_args
