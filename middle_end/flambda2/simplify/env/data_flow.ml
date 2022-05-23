@@ -467,6 +467,8 @@ module Control_flow = struct
             Format.eprintf "PREV: %a@. %a@." Continuation.print cont
               (Continuation.Map.print Continuation.Set.print)
               c.prev;
+            Format.eprintf "DF:@ %a@."
+              print t;
             assert false
       in
       Continuation.Set.iter

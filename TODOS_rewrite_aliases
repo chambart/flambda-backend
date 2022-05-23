@@ -1,6 +1,7 @@
 
 # Gérer correctement le kind des arguments introduits
 * Nettoyers les substitutions hors de expr_builder
+* Vérifier si les continuations d'exceptions de call sont bien gérés
 * Gerer les substitutions dans les extra args
 * Gerer les substitutions dans switch
 * S'assurer qu'un apply_cont_rewrite n'est jamais vide
