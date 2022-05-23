@@ -362,9 +362,14 @@ module Control_flow = struct
     let prev =
       Continuation.Map.fold
         (fun from (elt : elt) (prev : Continuation.Set.t Continuation.Map.t) ->
-          Continuation.Map.fold
-            (fun to_ _ prev -> add prev ~from ~to_)
-            elt.apply_cont_args prev)
+           let prev =
+             Continuation.Map.fold
+               (fun to_ _ prev -> add prev ~from ~to_)
+               elt.apply_cont_args prev
+           in
+           Continuation.Set.fold
+             (fun to_ prev -> add prev ~from ~to_)
+             elt.apply_result_conts prev)
         t.map Continuation.Map.empty
     in
     let recursive_continuations =
