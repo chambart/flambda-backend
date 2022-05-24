@@ -174,6 +174,17 @@ module Stdlib = struct
           }
       in
       find_prefix ~longest_common_prefix_rev:[] first second
+
+    let rec map_sharing f l =
+      match l with
+      | [] -> l
+      | h :: t ->
+        let new_t = map_sharing f t in
+        let new_h = f h in
+        if h == new_h && t == new_t then
+          l
+        else
+          new_h :: new_t
   end
 
   module Option = struct

@@ -138,6 +138,10 @@ module Stdlib : sig
     (** Returns the longest list that, with respect to the provided equality
         function, is a prefix of both of the given lists.  The input lists,
         each with such longest common prefix removed, are also returned. *)
+
+    val map_sharing : ('a -> 'a) -> 'a list -> 'a list
+    (** [map_sharing f l] is [List.map f l].
+        If for each [x] in [l], [f x == x] then [map_sharing f l == l] *)
   end
 
   module Option : sig

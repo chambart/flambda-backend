@@ -224,35 +224,19 @@ let apply_renaming t renaming =
       if or_var == or_var' then t else Boxed_nativeint or_var'
     | Mutable_string { initial_value = _ } | Immutable_string _ -> t
     | Immutable_float_block fields ->
-      let changed = ref false in
-      let fields =
-        List.map
-          (fun (field : _ Or_variable.t) ->
-            let field' : _ Or_variable.t =
-              match field with
-              | Var (v, dbg) -> Var (Renaming.apply_variable renaming v, dbg)
-              | Const _ -> field
-            in
-            if not (field == field') then changed := true;
-            field')
+      let fields' =
+        Misc.Stdlib.List.map_sharing
+          (fun field -> Or_variable.apply_renaming field renaming)
           fields
       in
-      if not !changed then t else Immutable_float_block fields
+      if fields == fields' then t else Immutable_float_block fields
     | Immutable_float_array fields ->
-      let changed = ref false in
-      let fields =
-        List.map
-          (fun (field : _ Or_variable.t) ->
-            let field' : _ Or_variable.t =
-              match field with
-              | Var (v, dbg) -> Var (Renaming.apply_variable renaming v, dbg)
-              | Const _ -> field
-            in
-            if not (field == field') then changed := true;
-            field')
+      let fields' =
+        Misc.Stdlib.List.map_sharing
+          (fun field -> Or_variable.apply_renaming field renaming)
           fields
       in
-      if not !changed then t else Immutable_float_array fields
+      if fields == fields' then t else Immutable_float_array fields
     | Empty_array -> Empty_array
 
 let all_ids_for_export t =
