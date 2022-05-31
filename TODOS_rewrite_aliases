@@ -18,3 +18,6 @@
 * Ajouter les paramètres de fonction dans les arguments de la dummy_entry_continuation
 * Gerer correctement le scope des variable par rapport aux let_cont: ne sont considérés
   dans le scope pour l'instant que les arguments de continuation
+
+
+#build /media/data/ocaml/dune_output/_build/default/dune_output.exe /media/data/compiler/backend/alias-rewrite/log 

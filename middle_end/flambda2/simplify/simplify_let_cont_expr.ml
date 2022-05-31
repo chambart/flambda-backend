@@ -435,7 +435,7 @@ let simplify_non_recursive_let_cont_handler ~simplify_expr ~denv_before_body
         is_single_inlinable_use;
         escapes
       } ->
-    Format.eprintf "EPA: %a@." EPA.print extra_params_and_args;
+    (* Format.eprintf "EPA: %a@." EPA.print extra_params_and_args; *)
     let handler_env, extra_params_and_args, is_exn_handler, dacc =
       match Continuation.sort cont with
       | Normal_or_exn when is_single_inlinable_use ->

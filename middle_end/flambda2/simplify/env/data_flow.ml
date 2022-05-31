@@ -14,6 +14,8 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
+module EPA = Continuation_extra_params_and_args
+
 (* Helper module *)
 (* ************* *)
 
@@ -49,6 +51,7 @@ type elt =
     code_ids : Name_occurrences.t Code_id.Map.t;
     value_slots : Name_occurrences.t Name.Map.t Value_slot.Map.t;
     apply_cont_args : Simple.Set.t Numeric_types.Int.Map.t Continuation.Map.t;
+    rewrite_ids : Apply_cont_rewrite_id.Set.t Continuation.Map.t;
     inside : Continuation.t option
   }
 
@@ -57,7 +60,7 @@ type t =
     map : elt Continuation.Map.t;
     extra : Continuation_extra_params_and_args.t Continuation.Map.t;
     dummy_toplevel_cont : Continuation.t option;
-    kinds : Flambda_kind.With_subkind.t Variable.Map.t;
+    kinds : Flambda_kind.With_subkind.t Variable.Map.t
   }
 
 type result =
@@ -80,6 +83,7 @@ let print_elt ppf
       code_ids;
       value_slots;
       apply_cont_args;
+      rewrite_ids;
       inside
     } =
   Format.fprintf ppf
@@ -87,7 +91,7 @@ let print_elt ppf
      1>(params %a)@]@ @[<hov 1>(used_in_handler %a)@]@ @[<hov \
      1>(apply_result_conts %a)@]@ @[<hov 1>(bindings %a)@]@ @[<hov 1>(code_ids \
      %a)@]@ @[<hov 1>(value_slots %a)@]@ @[<hov 1>(apply_cont_args %a)@])@ \
-     @[<hov 1>(inside %a)@])@]"
+     @[<hov 1>(apply_cont_args %a)@])@ @[<hov 1>(inside %a)@])@]"
     Continuation.print continuation recursive Bound_parameters.print params
     Name_occurrences.print used_in_handler Continuation.Set.print
     apply_result_conts
@@ -99,6 +103,8 @@ let print_elt ppf
     value_slots
     (Continuation.Map.print (Numeric_types.Int.Map.print Simple.Set.print))
     apply_cont_args
+    (Continuation.Map.print Apply_cont_rewrite_id.Set.print)
+    rewrite_ids
     (Format.pp_print_option Continuation.print)
     inside
 
@@ -145,7 +151,7 @@ let empty =
     map = Continuation.Map.empty;
     extra = Continuation.Map.empty;
     dummy_toplevel_cont = None;
-    kinds = Variable.Map.empty;
+    kinds = Variable.Map.empty
   }
 
 (* Updates *)
@@ -175,12 +181,15 @@ let enter_continuation continuation ~recursive params t =
       used_in_handler = Name_occurrences.empty;
       apply_cont_args = Continuation.Map.empty;
       apply_result_conts = Continuation.Set.empty;
+      rewrite_ids = Continuation.Map.empty;
       inside
     }
   in
   let kinds =
-    List.fold_left (fun kinds bp ->
-        Variable.Map.add (Bound_parameter.var bp) (Bound_parameter.kind bp) kinds)
+    List.fold_left
+      (fun kinds bp ->
+        Variable.Map.add (Bound_parameter.var bp) (Bound_parameter.kind bp)
+          kinds)
       t.kinds
       (Bound_parameters.to_list params)
   in
@@ -208,26 +217,26 @@ let insert_kind var kind t =
   { t with kinds = Variable.Map.add var kind t.kinds }
 
 let record_var_binding var kind name_occurrences ~generate_phantom_lets t =
-  insert_kind var kind @@
-  update_top_of_stack ~t ~f:(fun elt ->
-      let bindings =
-        Name.Map.update (Name.var var)
-          (function
-            | None -> Some name_occurrences
-            | Some _ ->
-              Misc.fatal_errorf
-                "The following variable has been bound twice: %a" Variable.print
-                var)
-          elt.bindings
-      in
-      let used_in_handler =
-        if Variable.user_visible var && generate_phantom_lets
-        then
-          Name_occurrences.add_variable elt.used_in_handler var
-            Name_mode.phantom
-        else elt.used_in_handler
-      in
-      { elt with bindings; used_in_handler })
+  insert_kind var kind
+  @@ update_top_of_stack ~t ~f:(fun elt ->
+         let bindings =
+           Name.Map.update (Name.var var)
+             (function
+               | None -> Some name_occurrences
+               | Some _ ->
+                 Misc.fatal_errorf
+                   "The following variable has been bound twice: %a"
+                   Variable.print var)
+             elt.bindings
+         in
+         let used_in_handler =
+           if Variable.user_visible var && generate_phantom_lets
+           then
+             Name_occurrences.add_variable elt.used_in_handler var
+               Name_mode.phantom
+           else elt.used_in_handler
+         in
+         { elt with bindings; used_in_handler })
 
 let record_symbol_projection var name_occurrences t =
   update_top_of_stack ~t ~f:(fun elt ->
@@ -303,7 +312,7 @@ let add_apply_result_cont k t =
       let apply_result_conts = Continuation.Set.add k elt.apply_result_conts in
       { elt with apply_result_conts })
 
-let add_apply_cont_args cont args t =
+let add_apply_cont_args cont rewrite_id args t =
   update_top_of_stack ~t ~f:(fun elt ->
       let apply_cont_args =
         Continuation.Map.update cont
@@ -329,7 +338,18 @@ let add_apply_cont_args cont args t =
             Some map)
           elt.apply_cont_args
       in
-      { elt with apply_cont_args })
+      let rewrite_ids =
+        Continuation.Map.update cont
+          (fun rewrite_ids ->
+            let rewrite_ids =
+              match rewrite_ids with
+              | None -> Apply_cont_rewrite_id.Set.singleton rewrite_id
+              | Some set -> Apply_cont_rewrite_id.Set.add rewrite_id set
+            in
+            Some rewrite_ids)
+          elt.rewrite_ids
+      in
+      { elt with apply_cont_args; rewrite_ids })
 
 (* Control flow *)
 (* ************ *)
@@ -341,7 +361,8 @@ module Control_flow = struct
       return_continuation : Continuation.t;
       exn_continuation : Continuation.t;
       recursive_continuations : Continuation.Set.t;
-      contains : Continuation.Set.t Continuation.Map.t
+      contains : Continuation.Set.t Continuation.Map.t;
+      end_with_func_call : Continuation.Set.t
           (* introduced_continuations : Continuation.Set.t; *)
     }
 
@@ -362,15 +383,23 @@ module Control_flow = struct
     let prev =
       Continuation.Map.fold
         (fun from (elt : elt) (prev : Continuation.Set.t Continuation.Map.t) ->
-           let prev =
-             Continuation.Map.fold
-               (fun to_ _ prev -> add prev ~from ~to_)
-               elt.apply_cont_args prev
-           in
-           Continuation.Set.fold
-             (fun to_ prev -> add prev ~from ~to_)
-             elt.apply_result_conts prev)
+          let prev =
+            Continuation.Map.fold
+              (fun to_ _ prev -> add prev ~from ~to_)
+              elt.apply_cont_args prev
+          in
+          Continuation.Set.fold
+            (fun to_ prev -> add prev ~from ~to_)
+            elt.apply_result_conts prev)
         t.map Continuation.Map.empty
+    in
+    let end_with_func_call =
+      Continuation.Map.fold
+        (fun from (elt : elt) set ->
+          if Continuation.Set.is_empty elt.apply_result_conts
+          then set
+          else Continuation.Set.add from set)
+        t.map Continuation.Set.empty
     in
     let recursive_continuations =
       Continuation.Map.fold
@@ -397,7 +426,8 @@ module Control_flow = struct
       return_continuation;
       exn_continuation;
       recursive_continuations;
-      contains
+      contains;
+      end_with_func_call
     }
 
   (* module SCC_continuation = Strongly_connected_components.Make
@@ -427,7 +457,7 @@ module Control_flow = struct
 
   let make_req t aliases =
     Continuation.Map.filter_map
-      (fun _ (elt : elt) ->
+      (fun continuation (elt : elt) ->
         let apply_cont_args =
           Continuation.Map.fold
             (fun _ im set ->
@@ -436,6 +466,7 @@ module Control_flow = struct
                 im set)
             elt.apply_cont_args Variable.Set.empty
         in
+
         let req =
           Variable.Set.fold
             (fun var req ->
@@ -443,6 +474,31 @@ module Control_flow = struct
               | None -> req
               | Some v -> Variable.Set.add v req)
             apply_cont_args Variable.Set.empty
+        in
+        let extra = Continuation.Map.find continuation t.extra in
+        let rewrite_ids = Continuation.Map.find continuation elt.rewrite_ids in
+        let req =
+          Apply_cont_rewrite_id.Set.fold
+            (fun rewrite_id req ->
+              let extra_args =
+                Apply_cont_rewrite_id.Map.find rewrite_id extra.extra_args
+              in
+              List.fold_left
+                (fun req (extra_arg : EPA.Extra_arg.t) ->
+                  match extra_arg with
+                  | Already_in_scope s -> begin
+                    match Simple.must_be_var s with
+                    | None -> req
+                    | Some (var, _) -> (
+                      match Variable.Map.find_opt var aliases with
+                      | None -> req
+                      | Some v -> Variable.Set.add v req)
+                  end
+                  | New_let_binding _
+                  | New_let_binding_with_named_args _ ->
+                    failwith "TODO")
+                req extra_args)
+            rewrite_ids req
         in
         if Variable.Set.is_empty req then None else Some req)
       t.map
@@ -467,8 +523,7 @@ module Control_flow = struct
             Format.eprintf "PREV: %a@. %a@." Continuation.print cont
               (Continuation.Map.print Continuation.Set.print)
               c.prev;
-            Format.eprintf "DF:@ %a@."
-              print t;
+            Format.eprintf "DF:@ %a@." print t;
             assert false
       in
       Continuation.Set.iter
@@ -550,13 +605,23 @@ module Control_flow = struct
       "" (* label *) ""
   (* style *)
 
+  let print_call_edge ppf (from, to_) =
+    Format.fprintf ppf
+      "@[<h 2>%s%i %s %s%i [ label=\"%s\" color=\"blue\"%s ] ;@]@ "
+      (Continuation.name from)
+      (Continuation.name_stamp from)
+      "->" (Continuation.name to_)
+      (Continuation.name_stamp to_)
+      "" (* label *) ""
+  (* style *)
+
   let print_contains ppf (from, to_) =
     Format.fprintf ppf "@[<h 2>%s%i %s %s%i [ label=\"%s\"%s ] ;@]@ "
       (Continuation.name from)
       (Continuation.name_stamp from)
       "->" (Continuation.name to_)
       (Continuation.name_stamp to_)
-      "" (* label *) "color=grey"
+      "" (* label *) "color=red"
 
   let print_vert ppf cont label =
     Format.fprintf ppf
@@ -581,7 +646,10 @@ module Control_flow = struct
       (fun from set ->
         if Continuation.Set.mem from c.recursive_continuations
         then print_rec_vert ppf from;
-        Continuation.Set.iter (fun to_ -> print_edge ppf (from, to_)) set)
+        if Continuation.Set.mem from c.end_with_func_call
+        then
+          Continuation.Set.iter (fun to_ -> print_call_edge ppf (from, to_)) set
+        else Continuation.Set.iter (fun to_ -> print_edge ppf (from, to_)) set)
       c.prev;
     Continuation.Map.iter
       (fun cont contained ->
@@ -640,6 +708,7 @@ module Alias_graph = struct
         value_slots = _;
         continuation = _;
         params = _;
+        rewrite_ids = _;
         inside = _
       } t =
     (* Build the graph of dependencies between continuation parameters and
@@ -1091,6 +1160,7 @@ module Dependency_graph = struct
         value_slots;
         continuation = _;
         params = _;
+        rewrite_ids = _;
         inside = _
       } t =
     (* Add the vars used in the handler *)
@@ -1337,22 +1407,22 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
          * Format.eprintf "PROVIDED: %a@."
          *   (Continuation.Map.print Variable.Set.print)
          *   _prov; *)
-
         let required_new_args =
           Continuation.Map.map
             (fun req ->
               Bound_parameters.create
               @@ List.map
                    (fun v ->
-                    let kind_with_subkind = Variable.Map.find v kinds in
-                    Bound_parameter.create v kind_with_subkind)
+                     let kind_with_subkind = Variable.Map.find v kinds in
+                     Bound_parameter.create v kind_with_subkind)
                    (Variable.Set.elements req))
             (* TODO: use _req_with_new_cont *)
             _req_without_scoped
         in
 
+        Format.eprintf "INFO:@\n%a@\n@." print t;
+
         ignore required_new_args;
         (* result *)
-        { result with aliases = _fdom; required_new_args }
-      )
+        { result with aliases = _fdom; required_new_args })
       else result)
