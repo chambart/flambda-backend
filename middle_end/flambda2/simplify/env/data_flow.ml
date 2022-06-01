@@ -157,7 +157,15 @@ let empty =
 (* Updates *)
 (* ******* *)
 
-let add_extra_params_and_args cont extra t =
+let add_extra_params_and_args cont (extra : Continuation_extra_params_and_args.t) t =
+  let kinds =
+    List.fold_left
+      (fun kinds bp ->
+        Variable.Map.add (Bound_parameter.var bp) (Bound_parameter.kind bp)
+          kinds)
+      t.kinds
+      (Bound_parameters.to_list extra.extra_params)
+  in
   let extra =
     Continuation.Map.update cont
       (function
@@ -165,7 +173,7 @@ let add_extra_params_and_args cont extra t =
         | None -> Some extra)
       t.extra
   in
-  { t with extra }
+  { t with extra; kinds }
 
 let enter_continuation continuation ~recursive params t =
   let inside =
