@@ -1407,8 +1407,8 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
         let _dom = Alias_graph.Dom.dom _graph in
         let _fdom = Alias_graph.Dom.first_dom _dom in
 
-        (* Format.eprintf "/// dom@\n%a@\n@." Alias_graph.Dom._print_result
-           _dom; *)
+        Format.eprintf "/// dom@\n%a@\n@." Alias_graph.Dom._print_result
+           _dom;
         Format.eprintf "/// substitutions@\n%a@\n@."
           (Variable.Map.print Variable.print)
           _fdom;
@@ -1439,6 +1439,9 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
           (Continuation.Map.print Variable.Set.print)
           _req_with_new_cont;
 
+
+        Format.eprintf "INFO:@\n%a@\n@." print t;
+
         (* let _prov =
          *   Continuation.Map.map (fun elt -> Control_flow.provided elt) t.map
          * in
@@ -1451,14 +1454,19 @@ let analyze ~return_continuation ~exn_continuation ~code_age_relation
               Bound_parameters.create
               @@ List.map
                    (fun v ->
-                     let kind_with_subkind = Variable.Map.find v kinds in
-                     Bound_parameter.create v kind_with_subkind)
+                     match Variable.Map.find v kinds with
+                       | exception Not_found ->
+                         Format.eprintf "XXUUXXUU@.@. Missing kind for: %a@.@.%a@."
+                           Variable.print v
+                           (Variable.Map.print Flambda_kind.With_subkind.print) kinds;
+                         assert false
+                         (* Bound_parameter.create v Flambda_kind.With_subkind.any_value *)
+                     | kind_with_subkind ->
+                       Bound_parameter.create v kind_with_subkind)
                    (Variable.Set.elements req))
             (* TODO: use _req_with_new_cont *)
             _req_without_scoped
         in
-
-        Format.eprintf "INFO:@\n%a@\n@." print t;
 
         ignore required_new_args;
         (* result *)
