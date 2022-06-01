@@ -78,10 +78,11 @@ and simplify_toplevel dacc expr ~return_continuation ~return_arity
             Data_flow.analyze data_flow ~code_age_relation ~used_value_slots
               ~return_continuation ~exn_continuation ~for_inlining:false
           with e ->
+            let bt = Printexc.get_raw_backtrace () in
             Format.eprintf
               "@.@.********************@.@.%a@.@.##############@.@." DA.print
               dacc;
-            raise e
+            Printexc.raise_with_backtrace e bt
         in
         (* The code_id part of the data_flow analysis is correct only at
            toplevel where all the code_ids are, so when in a closure, we state
