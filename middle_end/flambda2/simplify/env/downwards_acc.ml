@@ -88,7 +88,10 @@ let record_continuation_use t cont use_kind ~env_at_use ~arg_types =
     CUE.record_continuation_use t.continuation_uses_env cont use_kind
       ~env_at_use ~arg_types
   in
-  with_continuation_uses_env t ~cont_uses_env, id
+  let data_flow =
+    Data_flow.record_cont_use cont id t.data_flow
+  in
+  { t with continuation_uses_env = cont_uses_env; data_flow }, id
 
 let delete_continuation_uses t cont =
   let cont_uses_env =

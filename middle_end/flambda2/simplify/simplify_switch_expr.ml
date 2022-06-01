@@ -380,7 +380,6 @@ let simplify_arm ~typing_env_at_use ~scrutinee_ty arm action (arms, dacc) =
           ~f:
             (Data_flow.add_apply_cont_args
                (Apply_cont.continuation action)
-               rewrite_id
                args)
       in
       let arms =
@@ -404,7 +403,6 @@ let simplify_arm ~typing_env_at_use ~scrutinee_ty arm action (arms, dacc) =
           ~f:
             (Data_flow.add_apply_cont_args
                (Apply_cont.continuation action)
-               rewrite_id
                args)
       in
       let arms = Targetint_31_63.Map.add arm (action, rewrite_id, arity) arms in

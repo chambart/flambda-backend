@@ -1,5 +1,6 @@
 
 # Gérer correctement le kind des arguments introduits
+* Gérer les dépendances dans les let_bindings introduits dans les apply_cont_rewrite
 * Nettoyers les substitutions hors de expr_builder
 * Vérifier si les continuations d'exceptions de call sont bien gérés
 * Gerer les substitutions dans les extra args
@@ -20,4 +21,5 @@
   dans le scope pour l'instant que les arguments de continuation
 
 
-#build /media/data/ocaml/dune_output/_build/default/dune_output.exe /media/data/compiler/backend/alias-rewrite/log 
+#build /media/data/ocaml/dune_output/_build/default/dune_output.exe /media/data/compiler/backend/alias-rewrite/log
+/media/data/code/dune_output/_build/default/dune_output.exe /media/data/code/ocaml_branches/alias-rewrite/log 

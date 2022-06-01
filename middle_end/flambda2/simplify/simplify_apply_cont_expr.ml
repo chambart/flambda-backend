@@ -161,7 +161,6 @@ let simplify_apply_cont dacc apply_cont ~down_to_up =
     let record_args_for_data_flow data_flow =
       Data_flow.add_apply_cont_args
         (AC.continuation apply_cont)
-        rewrite_id
         args
         data_flow
     in

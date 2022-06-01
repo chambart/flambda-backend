@@ -91,7 +91,7 @@ let print_elt ppf
      1>(params %a)@]@ @[<hov 1>(used_in_handler %a)@]@ @[<hov \
      1>(apply_result_conts %a)@]@ @[<hov 1>(bindings %a)@]@ @[<hov 1>(code_ids \
      %a)@]@ @[<hov 1>(value_slots %a)@]@ @[<hov 1>(apply_cont_args %a)@])@ \
-     @[<hov 1>(apply_cont_args %a)@])@ @[<hov 1>(inside %a)@])@]"
+     @[<hov 1>(rewrite_ids %a)@])@ @[<hov 1>(inside %a)@])@]"
     Continuation.print continuation recursive Bound_parameters.print params
     Name_occurrences.print used_in_handler Continuation.Set.print
     apply_result_conts
@@ -307,12 +307,27 @@ let add_used_in_current_handler name_occurrences t =
       in
       { elt with used_in_handler })
 
+let record_cont_use k rewrite_id t =
+  update_top_of_stack ~t ~f:(fun elt ->
+      let rewrite_ids =
+        Continuation.Map.update k
+          (fun rewrite_ids ->
+            let rewrite_ids =
+              match rewrite_ids with
+              | None -> Apply_cont_rewrite_id.Set.singleton rewrite_id
+              | Some set -> Apply_cont_rewrite_id.Set.add rewrite_id set
+            in
+            Some rewrite_ids)
+          elt.rewrite_ids
+      in
+      { elt with rewrite_ids })
+
 let add_apply_result_cont k t =
   update_top_of_stack ~t ~f:(fun elt ->
       let apply_result_conts = Continuation.Set.add k elt.apply_result_conts in
       { elt with apply_result_conts })
 
-let add_apply_cont_args cont rewrite_id args t =
+let add_apply_cont_args cont args t =
   update_top_of_stack ~t ~f:(fun elt ->
       let apply_cont_args =
         Continuation.Map.update cont
@@ -338,18 +353,7 @@ let add_apply_cont_args cont rewrite_id args t =
             Some map)
           elt.apply_cont_args
       in
-      let rewrite_ids =
-        Continuation.Map.update cont
-          (fun rewrite_ids ->
-            let rewrite_ids =
-              match rewrite_ids with
-              | None -> Apply_cont_rewrite_id.Set.singleton rewrite_id
-              | Some set -> Apply_cont_rewrite_id.Set.add rewrite_id set
-            in
-            Some rewrite_ids)
-          elt.rewrite_ids
-      in
-      { elt with apply_cont_args; rewrite_ids })
+      { elt with apply_cont_args })
 
 (* Control flow *)
 (* ************ *)
@@ -457,13 +461,65 @@ module Control_flow = struct
 
   let make_req t aliases =
     Continuation.Map.filter_map
-      (fun continuation (elt : elt) ->
+      (fun _continuation (elt : elt) ->
         let apply_cont_args =
           Continuation.Map.fold
-            (fun _ im set ->
-              Numeric_types.Int.Map.fold
-                (fun _ args set -> Variable.Set.union (only_variables args) set)
-                im set)
+            (fun applied_cont im set ->
+              let set =
+                Numeric_types.Int.Map.fold
+                  (fun _ args set ->
+                    Variable.Set.union (only_variables args) set)
+                  im set
+              in
+              let set =
+                match
+                  ( Continuation.Map.find_opt applied_cont t.extra,
+                    Continuation.Map.find_opt applied_cont elt.rewrite_ids )
+                with
+                | None, Some _ ->
+                  (* Format.printf "None, Some %a@." Continuation.print
+                   *   _continuation; *)
+                  set
+                | Some _, None ->
+                  (* Format.printf "Some, None %a@." Continuation.print
+                   *   _continuation; *)
+                  set
+                | None, None -> set
+                (* | None, _ | _, None -> req *)
+                | Some extra, Some rewrite_ids ->
+                  (* Format.printf "XXX Some, Some %a@." Continuation.print
+                   *   _continuation; *)
+                  let set =
+                    Apply_cont_rewrite_id.Set.fold
+                      (fun rewrite_id set ->
+                        let extra_args =
+                          match
+                            Apply_cont_rewrite_id.Map.find_opt rewrite_id
+                              extra.extra_args
+                          with
+                          | None -> []
+                          | Some extra_args -> extra_args
+                        in
+                        List.fold_left
+                          (fun set (extra_arg : EPA.Extra_arg.t) ->
+                            match extra_arg with
+                            | Already_in_scope s -> begin
+                              match Simple.must_be_var s with
+                              | None -> set
+                              | Some (var, _) -> Variable.Set.add var set
+                            end
+                            | New_let_binding _
+                            | New_let_binding_with_named_args _ ->
+                              (* We dont't rewrite let bindings yet so those
+                                 dependencies don't need to be accounted for YET
+                                 XXX TODO XXX *)
+                              set)
+                          set extra_args)
+                      rewrite_ids set
+                  in
+                  set
+              in
+              set)
             elt.apply_cont_args Variable.Set.empty
         in
 
@@ -474,31 +530,6 @@ module Control_flow = struct
               | None -> req
               | Some v -> Variable.Set.add v req)
             apply_cont_args Variable.Set.empty
-        in
-        let extra = Continuation.Map.find continuation t.extra in
-        let rewrite_ids = Continuation.Map.find continuation elt.rewrite_ids in
-        let req =
-          Apply_cont_rewrite_id.Set.fold
-            (fun rewrite_id req ->
-              let extra_args =
-                Apply_cont_rewrite_id.Map.find rewrite_id extra.extra_args
-              in
-              List.fold_left
-                (fun req (extra_arg : EPA.Extra_arg.t) ->
-                  match extra_arg with
-                  | Already_in_scope s -> begin
-                    match Simple.must_be_var s with
-                    | None -> req
-                    | Some (var, _) -> (
-                      match Variable.Map.find_opt var aliases with
-                      | None -> req
-                      | Some v -> Variable.Set.add v req)
-                  end
-                  | New_let_binding _
-                  | New_let_binding_with_named_args _ ->
-                    failwith "TODO")
-                req extra_args)
-            rewrite_ids req
         in
         if Variable.Set.is_empty req then None else Some req)
       t.map
@@ -928,7 +959,6 @@ module Dependency_graph = struct
     module Edge (Src_map : Container_types.Map) (Dst_set : Container_types.Set) =
     struct
       type src = Src_map.key
-
       type dst = Dst_set.elt
 
       let push ~(src : src) (enqueued : Dst_set.t) (queue : dst Queue.t)
