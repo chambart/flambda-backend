@@ -12,6 +12,8 @@
 (*                                                                        *)
 (**************************************************************************)
 
+let disable_colours = ref false
+
 let colour_enabled =
   lazy
     ((* This avoids having to alter misc.ml *)
@@ -21,13 +23,22 @@ let colour_enabled =
      Format.fprintf ppf "@{<error>@}%!";
      String.length (Buffer.contents buf) > 0)
 
-let normal () = if Lazy.force colour_enabled then "\x1b[0m" else ""
+let is_colour_enabled () = Lazy.force colour_enabled && not !disable_colours
+
+let without_colours ~f =
+  let tmp = !disable_colours in
+  disable_colours := true;
+  let res = f () in
+  disable_colours := tmp;
+  res
+
+let normal () = if is_colour_enabled () then "\x1b[0m" else ""
 
 let fg_256 n =
-  if Lazy.force colour_enabled then Printf.sprintf "\x1b[38;5;%d;1m" n else ""
+  if is_colour_enabled () then Printf.sprintf "\x1b[38;5;%d;1m" n else ""
 
 let bg_256 n =
-  if Lazy.force colour_enabled then Printf.sprintf "\x1b[48;5;%d;1m" n else ""
+  if is_colour_enabled () then Printf.sprintf "\x1b[48;5;%d;1m" n else ""
 
 let prim_constructive () = fg_256 163
 

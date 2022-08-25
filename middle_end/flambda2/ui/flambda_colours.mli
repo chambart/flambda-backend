@@ -79,3 +79,5 @@ val error : unit -> string
 val each_file : unit -> string
 
 val lambda : unit -> string
+
+val without_colours : f:(unit -> 'a) -> 'a
