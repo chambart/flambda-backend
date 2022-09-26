@@ -78,6 +78,7 @@ type elt =
     parent_continuation : Continuation.t option;
     used_in_handler : Name_occurrences.t;
     bindings : Name_occurrences.t Name.Map.t;
+    direct_aliases : Simple.t Variable.Map.t;
     ref_prims_rev : (Named_rewrite_id.t * Variable.t * ref_prim) list;
     defined : Variable.Set.t;
     code_ids : Name_occurrences.t Code_id.Map.t;
@@ -152,6 +153,7 @@ let [@ocamlformat "disable"] print_elt ppf
       parent_continuation;
       used_in_handler;
       bindings;
+      direct_aliases;
       ref_prims_rev;
       defined;
       code_ids;
@@ -166,6 +168,7 @@ let [@ocamlformat "disable"] print_elt ppf
       @[<hov 1>(parent_continuation %a)@]@ \
       @[<hov 1>(used_in_handler %a)@]@ \
       @[<hov 1>(bindings %a)@]@ \
+      @[<hov 1>(direct_aliases %a)@]@ \
       @[<hov 1>(ref_prims %a)@]@ \
       @[<hov 1>(defined %a)@]@ \
       @[<hov 1>(code_ids %a)@]@ \
@@ -180,6 +183,7 @@ let [@ocamlformat "disable"] print_elt ppf
        Continuation.print) parent_continuation
     Name_occurrences.print used_in_handler
     (Name.Map.print Name_occurrences.print) bindings
+    (Variable.Map.print Simple.print) direct_aliases
     print_ref_prims_rev ref_prims_rev
     Variable.Set.print
     defined
@@ -392,6 +396,7 @@ let enter_continuation continuation ~recursive ~is_exn_handler params t =
       params;
       parent_continuation;
       bindings = Name.Map.empty;
+      direct_aliases = Variable.Map.empty;
       ref_prims_rev = [];
       defined = Variable.Set.empty;
       code_ids = Code_id.Map.empty;
@@ -856,6 +861,7 @@ module Dependency_graph = struct
            optimal *)
         used_in_handler;
         bindings;
+        direct_aliases;
         ref_prims_rev;
         defined = _;
         code_ids;
@@ -898,6 +904,16 @@ module Dependency_graph = struct
             ~names:(fun t dst -> add_dependency ~src ~dst t)
             ~code_ids:(fun t dst -> add_code_id_dep ~src ~dst t))
         bindings t
+    in
+    let t =
+      Variable.Map.fold
+        (fun src simple graph ->
+          let src = Name.var src in
+          let name_occurrences = Simple.free_names simple in
+          fold_name_occurrences name_occurrences ~init:graph
+            ~names:(fun t dst -> add_dependency ~src ~dst t)
+            ~code_ids:(fun t dst -> add_code_id_dep ~src ~dst t))
+        direct_aliases t
     in
     let t =
       List.fold_left
@@ -1092,6 +1108,11 @@ module Dominator_graph = struct
           { t with params_kind })
         t
         (Bound_parameters.to_list elt.params)
+    in
+    let t =
+      Variable.Map.fold
+        (fun src dst t -> add_edge ~src ~dst t)
+        elt.direct_aliases t
     in
     Continuation.Map.fold
       (fun k rewrite_ids t ->
