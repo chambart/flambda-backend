@@ -1363,7 +1363,7 @@ module Dominator_graph = struct
 end
 
 module Non_escaping_references = struct
-  type extra_ref_params = Variable.t list
+  type extra_ref_params = Bound_parameter.t list
 
   type extra_ref_args =
     Cont_arg.t Numeric_types.Int.Map.t Apply_cont_rewrite_id.Map.t
@@ -1659,14 +1659,21 @@ module Non_escaping_references = struct
       let env, params =
         Variable.Set.fold
           (fun ref_needed (env, params) ->
-            let arity =
-              List.length (Variable.Map.find ref_needed non_escaping_refs)
-            in
+            let arity = Variable.Map.find ref_needed non_escaping_refs in
             let ref_params =
-              List.init arity (fun i -> Variable.create (string_of_int i))
+              List.mapi
+                (fun i kind ->
+                  let var = Variable.create (string_of_int i) in
+                  Bound_parameter.create var kind)
+                arity
             in
             let env =
-              let fields = list_to_int_map (List.map Simple.var ref_params) in
+              let fields =
+                list_to_int_map
+                  (List.map
+                     (fun bp -> Simple.var (Bound_parameter.var bp))
+                     ref_params)
+              in
               { env with
                 bindings = Variable.Map.add ref_needed fields env.bindings
               }
