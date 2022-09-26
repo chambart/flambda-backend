@@ -1371,7 +1371,7 @@ module Non_escaping_references = struct
 
   type t =
     { (* non_escaping_references : Variable.Set.t *)
-      non_escaping_makeblock : Simple.t list Variable.Map.t;
+      non_escaping_makeblock : Flambda_kind.With_subkind.t list Variable.Map.t;
       continuations_with_live_ref : Variable.Set.t Continuation.Map.t;
       extra_ref_params_and_args :
         (extra_ref_params * extra_ref_args) Continuation.Map.t
@@ -1465,13 +1465,22 @@ module Non_escaping_references = struct
         List.fold_left
           (fun map (_id, var, prim) ->
             match prim with
-            | Make_block (_, Mutable, _, args) ->
+            | Make_block (kind, Mutable, _, args) ->
               (* TODO: remove the mutable constraint, there is no reason to
                  restrict to it. This is only there to test on the mutable
                  cases *)
               if Variable.Set.mem var escaping
               then map
-              else Variable.Map.add var args map
+              else
+                let kinds =
+                  match kind with
+                  | Naked_floats ->
+                    List.map
+                      (fun _ -> Flambda_kind.With_subkind.naked_float)
+                      args
+                  | Values (_, kinds) -> kinds
+                in
+                Variable.Map.add var kinds map
             | Make_block (_, (Immutable | Immutable_unique), _, _)
             | Block_load _ | Block_set _ ->
               map)
@@ -1644,7 +1653,8 @@ module Non_escaping_references = struct
           rewrites = Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
         }
 
-    let init_env ~(non_escaping_refs : Simple.t list Variable.Map.t)
+    let init_env
+        ~(non_escaping_refs : Flambda_kind.With_subkind.t list Variable.Map.t)
         ~(refs_needed : Variable.Set.t) ~rewrites =
       let env, params =
         Variable.Set.fold
@@ -1677,7 +1687,8 @@ module Non_escaping_references = struct
         in
         Numeric_types.Int.Map.disjoint_union i1 shifted_i2
 
-    let do_stuff ~(non_escaping_refs : Simple.t list Variable.Map.t)
+    let do_stuff
+        ~(non_escaping_refs : Flambda_kind.With_subkind.t list Variable.Map.t)
         ~continuations_with_live_ref ~dom ~source_info =
       let rewrites = ref Named_rewrite_id.Map.empty in
       Continuation.Map.mapi
@@ -1742,7 +1753,11 @@ module Non_escaping_references = struct
     if not (Variable.Map.is_empty non_escaping_refs)
     then
       Format.printf "Non escaping makeblocks %a@."
-        (Variable.Map.print Simple.List.print)
+        (Variable.Map.print (fun ppf kinds ->
+             Format.fprintf ppf "[%a]"
+               (Format.pp_print_list ~pp_sep:Format.pp_print_space
+                  Flambda_kind.With_subkind.print)
+               kinds))
         non_escaping_refs;
     let continuations_with_live_ref =
       continuations_with_live_ref ~non_escaping_refs ~dom ~source_info ~callers
