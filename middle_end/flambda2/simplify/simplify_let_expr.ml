@@ -183,9 +183,25 @@ let record_lifted_constant_for_data_flow data_flow lifted_constant =
     ~f:(record_lifted_constant_definition_for_data_flow ~being_defined)
 
 let record_new_defining_expression_binding_for_data_flow dacc data_flow
-    (binding : Simplify_named_result.binding_to_place) =
+    (binding : Simplify_named_result.binding_to_place) : DF.t =
   match binding.simplified_defining_expr with
-  | { free_names; named; cost_metrics = _ } ->
+  | { free_names; named; cost_metrics = _ } -> (
+    let match_block_and_field ~block ~field ~free_names ~data_flow f =
+      Simple.pattern_match field
+        ~name:(fun _ ~coercion:_ -> data_flow, free_names)
+        ~const:(fun const ->
+          Simple.pattern_match' block
+            ~const:(fun _ -> data_flow, free_names)
+            ~symbol:(fun _ ~coercion:_ -> data_flow, free_names)
+            ~var:(fun var ~coercion:_ ->
+              let field =
+                match[@ocaml.warning "-4"] Const.descr const with
+                | Tagged_immediate i -> Targetint_31_63.to_int i
+                | _ -> assert false
+              in
+              f var field))
+    in
+    let rewrite_id = Named_rewrite_id.create () in
     let can_be_removed =
       match named with
       | Simple _ | Set_of_closures _ | Rec_info _ -> true
@@ -199,24 +215,70 @@ let record_new_defining_expression_binding_for_data_flow dacc data_flow
         Bound_pattern.fold_all_bound_vars binding.let_bound ~init:data_flow
           ~f:(fun data_flow v -> DF.record_defined_var (VB.var v) data_flow)
       in
+      let data_flow, free_names =
+        (* TODO cleaner version of that, should this pattern match be part of
+           data flow to produce a data_flow ref_prim ? *)
+        match[@ocaml.warning "-4"] named with
+        | Simple _ | Set_of_closures _ | Rec_info _ -> data_flow, free_names
+        | Prim (prim, _) -> (
+          match prim with
+          | Ternary (Block_set (access_kind, init_or_assign), block, field, c)
+            ->
+            Format.printf "BLock_set@.";
+            match_block_and_field ~block ~field ~free_names ~data_flow
+              (fun block field ->
+                let bound_var =
+                  Bound_pattern.must_be_singleton binding.let_bound
+                in
+                let var = VB.var bound_var in
+                ( DF.record_ref_named rewrite_id var
+                    (Block_set (access_kind, init_or_assign, block, field, c))
+                    data_flow,
+                  Name_occurrences.empty ))
+          | _ -> data_flow, free_names)
+      in
       DF.add_used_in_current_handler free_names data_flow
     else
       let generate_phantom_lets = DE.generate_phantom_lets (DA.denv dacc) in
-      let free_names =
-        match named with
-        | Simple _ | Set_of_closures _ | Rec_info _ -> free_names
-        | Prim (prim, _) ->
-          (* Uses of region variables in [End_region] don't count as uses. *)
-          if Option.is_some (P.is_end_region prim)
-          then
-            (* Format.eprintf "ignoring free names for %a\n%!" P.print prim;*)
-            Name_occurrences.empty
-          else free_names
+      let record_var_binding data_flow free_names =
+        Bound_pattern.fold_all_bound_vars binding.let_bound ~init:data_flow
+          ~f:(fun data_flow v ->
+            DF.record_var_binding (VB.var v) free_names ~generate_phantom_lets
+              data_flow)
       in
-      Bound_pattern.fold_all_bound_vars binding.let_bound ~init:data_flow
-        ~f:(fun data_flow v ->
-          DF.record_var_binding (VB.var v) free_names ~generate_phantom_lets
-            data_flow)
+      match named with
+      | Simple _ | Set_of_closures _ | Rec_info _ ->
+        record_var_binding data_flow free_names
+      | Prim (prim, _) ->
+        let data_flow, free_names =
+          match[@ocaml.warning "-4"] prim with
+          | Binary (Block_load (access_kind, init_or_assign), block, field) ->
+            match_block_and_field ~block ~field ~free_names ~data_flow
+              (fun block field ->
+                let bound_var =
+                  Bound_pattern.must_be_singleton binding.let_bound
+                in
+                let var = VB.var bound_var in
+                ( DF.record_ref_named rewrite_id var
+                    (Block_load (access_kind, init_or_assign, block, field))
+                    data_flow,
+                  Name_occurrences.empty ))
+          | Variadic (Make_block (kind, mutability, alloc_mode), args) ->
+            let bound_var = Bound_pattern.must_be_singleton binding.let_bound in
+            let var = VB.var bound_var in
+            ( DF.record_ref_named rewrite_id var
+                (Make_block (kind, mutability, alloc_mode, args))
+                data_flow,
+              Name_occurrences.empty )
+          | _ ->
+            (* Uses of region variables in [End_region] don't count as uses. *)
+            if Option.is_some (P.is_end_region prim)
+            then
+              (* Format.eprintf "ignoring free names for %a\n%!" P.print prim;*)
+              data_flow, Name_occurrences.empty
+            else data_flow, free_names
+        in
+        record_var_binding data_flow free_names)
 
 let update_data_flow dacc closure_info ~lifted_constants_from_defining_expr
     simplify_named_result data_flow =
