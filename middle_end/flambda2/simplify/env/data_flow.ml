@@ -1572,8 +1572,9 @@ module Non_escaping_references = struct
           in
           let old_using_refs = Continuation.Map.find caller !res in
           let new_using_refs =
-            Variable.Set.union old_using_refs
-              (Variable.Set.diff used_refs defined_refs)
+            Variable.Set.diff
+              (Variable.Set.union old_using_refs used_refs)
+              defined_refs
           in
           if not (Variable.Set.equal old_using_refs new_using_refs)
           then (
