@@ -1327,9 +1327,18 @@ module Dominator_graph = struct
 end
 
 module Non_escaping_references = struct
+  type extra_ref_params = Variable.t list
+
+  type extra_ref_args =
+    Cont_arg.t Numeric_types.Int.Map.t Apply_cont_rewrite_id.Map.t
+    Continuation.Map.t
+
   type t =
     { (* non_escaping_references : Variable.Set.t *)
-      non_escaping_makeblock : Simple.t list Variable.Map.t
+      non_escaping_makeblock : Simple.t list Variable.Map.t;
+      continuations_with_live_ref : Variable.Set.t Continuation.Map.t;
+      extra_ref_params_and_args :
+        (extra_ref_params * extra_ref_args) Continuation.Map.t
     }
 
   let escaping ~(dom : Dominator_graph.result) ~(dom_graph : Dominator_graph.t)
@@ -1363,14 +1372,11 @@ module Non_escaping_references = struct
           Variable.Set.union escaping new_escaping)
         dom_graph.graph Variable.Set.empty
     in
-    let ref_prim_escaping (prim:ref_prim) =
+    let ref_prim_escaping (prim : ref_prim) =
       match prim with
-      | Make_block (_, _, _, args) ->
-        Simple.List.free_names args
-      | Block_set (_, _, _, _, value) ->
-        Simple.free_names value
-      | Block_load _ ->
-        Name_occurrences.empty
+      | Make_block (_, _, _, args) -> Simple.List.free_names args
+      | Block_set (_, _, _, _, value) -> Simple.free_names value
+      | Block_load _ -> Name_occurrences.empty
     in
     let escaping_by_use elt =
       let add_name_occurrences occurrences init =
@@ -1395,7 +1401,8 @@ module Non_escaping_references = struct
           elt.value_slots escaping
       in
       let escaping =
-        List.fold_left (fun escaping (_id, _var, prim) ->
+        List.fold_left
+          (fun escaping (_id, _var, prim) ->
             add_name_occurrences (ref_prim_escaping prim) escaping)
           escaping elt.ref_prims_rev
       in
@@ -1483,6 +1490,144 @@ module Non_escaping_references = struct
         defined)
       source_info.map
 
+  module Fold_prims = struct
+    type rewrite =
+      | Remove
+      | Binding of
+          { var : Variable.t;
+            bound_to : Simple.t
+          }
+
+    type env =
+      { bindings : Simple.t Numeric_types.Int.Map.t Variable.Map.t;
+        (* non escaping references bindings *)
+        rewrites : rewrite Named_rewrite_id.Map.t
+      }
+
+    let list_to_int_map l =
+      let _, map =
+        List.fold_left
+          (fun (i, fields) elt ->
+            let fields = Numeric_types.Int.Map.add i elt fields in
+            i + 1, fields)
+          (0, Numeric_types.Int.Map.empty)
+          l
+      in
+      map
+
+    let apply_prim ~dom env rewrite_id var (prim : ref_prim) =
+      match prim with
+      | Block_load (_kind, _mut, block, field) -> (
+        match Variable.Map.find block dom with
+        | exception Not_found -> env
+        | block -> (
+          match Variable.Map.find block env.bindings with
+          | exception Not_found -> env
+          | fields ->
+            let bound_to = Numeric_types.Int.Map.find field fields in
+            let rewrite = Binding { var; bound_to } in
+            { env with
+              rewrites =
+                Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
+            }))
+      | Block_set (_, _, block, field, value) -> (
+        match Variable.Map.find block dom with
+        | exception Not_found -> env
+        | block -> (
+          match Variable.Map.find block env.bindings with
+          | exception Not_found -> env
+          | fields ->
+            let rewrite = Remove in
+            let fields = Numeric_types.Int.Map.add field value fields in
+            { bindings = Variable.Map.add block fields env.bindings;
+              rewrites =
+                Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
+            }))
+      | Make_block (_, _, _, values) ->
+        let rewrite = Remove in
+        let fields = list_to_int_map values in
+        { bindings = Variable.Map.add var fields env.bindings;
+          rewrites = Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
+        }
+
+    let init_env ~(non_escaping_refs : Simple.t list Variable.Map.t)
+        ~(refs_needed : Variable.Set.t) ~rewrites =
+      let env, params =
+        Variable.Set.fold
+          (fun ref_needed (env, params) ->
+            let arity =
+              List.length (Variable.Map.find ref_needed non_escaping_refs)
+            in
+            let ref_params =
+              List.init arity (fun i -> Variable.create (string_of_int i))
+            in
+            let env =
+              let fields = list_to_int_map (List.map Simple.var ref_params) in
+              { env with
+                bindings = Variable.Map.add ref_needed fields env.bindings
+              }
+            in
+            env, ref_params @ params)
+          refs_needed
+          ({ bindings = Variable.Map.empty; rewrites }, [])
+      in
+      env, params
+
+    let append_int_map i1 i2 =
+      if Numeric_types.Int.Map.is_empty i1
+      then i2
+      else
+        let max, _ = Numeric_types.Int.Map.max_binding i1 in
+        let shifted_i2 =
+          Numeric_types.Int.Map.map_keys (fun i -> i + max + 1) i2
+        in
+        Numeric_types.Int.Map.disjoint_union i1 shifted_i2
+
+    let do_stuff ~(non_escaping_refs : Simple.t list Variable.Map.t)
+        ~continuations_with_live_ref ~dom ~source_info =
+      let rewrites = ref Named_rewrite_id.Map.empty in
+      Continuation.Map.mapi
+        (fun cont (refs_needed : Variable.Set.t) ->
+          let elt = Continuation.Map.find cont source_info.map in
+          let env, extra_ref_params =
+            init_env ~non_escaping_refs ~refs_needed ~rewrites:!rewrites
+          in
+          let env =
+            List.fold_left
+              (fun env (rewrite_id, var, prim) ->
+                apply_prim ~dom env rewrite_id var prim)
+              env
+              (List.rev elt.ref_prims_rev)
+          in
+          rewrites := env.rewrites;
+          let refs_params_to_add cont rewrites =
+            Apply_cont_rewrite_id.Map.map
+              (fun _args ->
+                let refs_needed =
+                  Continuation.Map.find cont continuations_with_live_ref
+                in
+                let extra_args =
+                  Variable.Set.fold
+                    (fun ref_needed extra_args ->
+                      let args = Variable.Map.find ref_needed env.bindings in
+                      append_int_map extra_args args)
+                    refs_needed Numeric_types.Int.Map.empty
+                in
+                let extra_args =
+                  Numeric_types.Int.Map.map
+                    (fun s -> Cont_arg.Simple s)
+                    extra_args
+                in
+                extra_args)
+              rewrites
+          in
+          let new_apply_cont_args =
+            Continuation.Map.mapi refs_params_to_add elt.apply_cont_args
+          in
+          extra_ref_params, new_apply_cont_args)
+        continuations_with_live_ref
+  end
+
   let continuations_with_live_ref ~non_escaping_refs ~dom ~source_info ~callers
       =
     let continuations_defining_refs =
@@ -1540,15 +1685,15 @@ module Non_escaping_references = struct
     done;
     !res
 
-(* TODO:
-   For all continuations with live ref, add parameters for every field of every live ref.
+  (* TODO: For all continuations with live ref, add parameters for every field
+     of every live ref.
 
-   for all continuations, fold over the ref_prims (after list rev) to propagate the names
-   of the fields at each block_set and record aliases for block_load.
+     for all continuations, fold over the ref_prims (after list rev) to
+     propagate the names of the fields at each block_set and record aliases for
+     block_load.
 
-   for evey apply cont to those continuations, add the corresponding arguments using the
-   last names of the fields.
-*)
+     for evey apply cont to those continuations, add the corresponding arguments
+     using the last names of the fields. *)
 
   let create ~(dom : Dominator_graph.result) ~(dom_graph : Dominator_graph.t)
       ~(source_info : source_info)
@@ -1575,7 +1720,20 @@ module Non_escaping_references = struct
       Misc.fatal_errorf
         "Toplevel continuation cannot have needed extra argument for ref: %a@."
         Variable.Set.print toplevel_used;
-    { non_escaping_makeblock = non_escaping_refs }
+    let extra_ref_params_and_args =
+      Fold_prims.do_stuff ~dom ~source_info ~continuations_with_live_ref
+        ~non_escaping_refs
+    in
+    { extra_ref_params_and_args;
+      non_escaping_makeblock = non_escaping_refs;
+      continuations_with_live_ref
+    }
+
+  let pp_node { non_escaping_makeblock = _; continuations_with_live_ref; _ } ppf
+      cont =
+    match Continuation.Map.find cont continuations_with_live_ref with
+    | exception Not_found -> ()
+    | live_refs -> Format.fprintf ppf " %a" Variable.Set.print live_refs
 end
 
 module Control_flow_graph = struct
@@ -1858,8 +2016,8 @@ module Control_flow_graph = struct
     let node_id ~ctx ppf (cont : Continuation.t) =
       Format.fprintf ppf "node_%d_%d" ctx (cont :> int)
 
-    let node ?(extra_args = Variable.Set.empty) ?(info = "") ~df ~ctx () ppf
-        cont =
+    let node ?(extra_args = Variable.Set.empty) ?(info = "") ~df ~pp_node ~ctx
+        () ppf cont =
       let params, shape =
         match Continuation.Map.find cont df.map with
         | exception Not_found -> "[ none ]", ""
@@ -1874,15 +2032,18 @@ module Control_flow_graph = struct
           let shape = if elt.recursive then "shape=record" else "" in
           params, shape
       in
-      Format.fprintf ppf "%a [label=\"%a %s %s\" %s %s];@\n" (node_id ~ctx) cont
-        Continuation.print cont params
+      Format.fprintf ppf "%a [label=\"%a %s %s%s\" %s %s];@\n" (node_id ~ctx)
+        cont Continuation.print cont params
         (String.map
            (function '{' -> '[' | '}' -> ']' | c -> c)
            (Format.asprintf "%a" Variable.Set.print extra_args))
+        (String.map
+           (function '{' -> '[' | '}' -> ']' | c -> c)
+           (Format.asprintf "%a" pp_node cont))
         shape info
 
     let nodes ~df ~ctx ~return_continuation ~exn_continuation
-        ~continuation_parameters ppf cont_map =
+        ~continuation_parameters ~pp_node ppf cont_map =
       Continuation.Set.iter
         (fun cont ->
           let extra_args =
@@ -1898,7 +2059,7 @@ module Control_flow_graph = struct
             then "color=red"
             else ""
           in
-          node ?extra_args ~df ~ctx ~info () ppf cont)
+          node ?extra_args ~df ~ctx ~info ~pp_node () ppf cont)
         cont_map
 
     let edge ~ctx ~color ppf src dst =
@@ -1919,7 +2080,7 @@ module Control_flow_graph = struct
         edge_map
 
     let print ~ctx ~df ~print_name ppf ~return_continuation ~exn_continuation
-        ~continuation_parameters (t : t) =
+        ?(pp_node = fun _ppf _cont -> ()) ~continuation_parameters (t : t) =
       let dummy_toplevel_cont = t.dummy_toplevel_cont in
       let all_conts =
         Continuation.Map.fold
@@ -1937,9 +2098,11 @@ module Control_flow_graph = struct
       Flambda_colours.without_colours ~f:(fun () ->
           Format.fprintf ppf
             "subgraph cluster_%d { label=\"%s\";@\n%a%a@\n%a@\n%a@\n}@." ctx
-            print_name (node ~df ~ctx ()) dummy_toplevel_cont
+            print_name
+            (node ~df ~ctx ~pp_node ())
+            dummy_toplevel_cont
             (nodes ~df ~return_continuation ~exn_continuation ~ctx
-               ~continuation_parameters)
+               ~continuation_parameters ~pp_node)
             all_conts
             (edges' ~ctx ~color:"green")
             t.parents
@@ -2019,6 +2182,11 @@ let analyze ?print_name ~return_continuation ~exn_continuation
               dom_graph)
           (Lazy.force dominator_graph_ppf));
       let control = Control_flow_graph.create ~dummy_toplevel_cont t in
+      let escaping =
+        Non_escaping_references.create ~dom:aliases ~dom_graph ~source_info:t
+          ~callers:control.callers
+      in
+      let pp_node = Non_escaping_references.pp_node escaping in
       let continuation_parameters =
         Control_flow_graph.compute_continuation_extra_args_for_aliases
           ~source_info:t aliases control
@@ -2032,12 +2200,8 @@ let analyze ?print_name ~return_continuation ~exn_continuation
             incr r;
             Control_flow_graph.Dot.print ~df:t ~print_name ~ctx:!r ppf
               ~return_continuation ~exn_continuation ~continuation_parameters
-              control)
+              ~pp_node control)
           (Lazy.force control_flow_graph_ppf));
-      let _escaping =
-        Non_escaping_references.create ~dom:aliases ~dom_graph ~source_info:t
-          ~callers:control.callers
-      in
       (* Return *)
       let result =
         { dead_variable_result;
