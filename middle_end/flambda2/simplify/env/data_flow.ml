@@ -452,6 +452,21 @@ let record_var_binding var name_occurrences ~generate_phantom_lets t =
       let defined = Variable.Set.add var elt.defined in
       { elt with bindings; used_in_handler; defined })
 
+let record_var_alias var definition t =
+  update_top_of_stack ~t ~f:(fun elt ->
+      let direct_aliases =
+        Variable.Map.update var
+          (function
+            | None -> Some definition
+            | Some _ ->
+              Misc.fatal_errorf
+                "The following variable has been bound twice: %a" Variable.print
+                var)
+          elt.direct_aliases
+      in
+      let defined = Variable.Set.add var elt.defined in
+      { elt with direct_aliases; defined })
+
 let record_ref_named rewrite_id ~bound_to prim t =
   update_top_of_stack ~t ~f:(fun elt ->
       { elt with
