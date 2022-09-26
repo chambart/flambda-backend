@@ -63,6 +63,19 @@ val record_defined_var : Variable.t -> t -> t
 val record_var_binding :
   Variable.t -> Name_occurrences.t -> generate_phantom_lets:bool -> t -> t
 
+type ref_prim =
+  | Block_load of Flambda_primitive.Block_access_kind.t * Mutability.t *
+      Variable.t * int
+  | Block_set of
+      Flambda_primitive.Block_access_kind.t * Flambda_primitive.Init_or_assign.t *
+      Variable.t * int * Simple.t
+  | Make_block of
+      Flambda_primitive.Block_kind.t * Mutability.t * Alloc_mode.With_region.t *
+      Simple.t list
+
+val record_ref_named :
+  Named_rewrite_id.t -> Variable.t -> ref_prim -> t -> t
+
 (** Add a variable binding to the symbol. Projections might get recorded
     multiple times. *)
 val record_symbol_projection : Variable.t -> Name_occurrences.t -> t -> t
