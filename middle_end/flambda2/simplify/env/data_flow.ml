@@ -114,6 +114,18 @@ type continuation_param_aliases =
     continuation_parameters : continuation_parameters Continuation.Map.t
   }
 
+type rewrite =
+  | Remove
+  | Binding of
+      { var : Variable.t;
+        bound_to : Simple.t
+      }
+
+type reference_result =
+  { additionnal_epa : Continuation_extra_params_and_args.t Continuation.Map.t;
+    let_rewrites : rewrite Named_rewrite_id.Map.t
+  }
+
 type dead_variable_result =
   { required_names : Name.Set.t;
     reachable_code_ids : Reachable_code_ids.t
@@ -121,7 +133,8 @@ type dead_variable_result =
 
 type result =
   { dead_variable_result : dead_variable_result;
-    continuation_param_aliases : continuation_param_aliases
+    continuation_param_aliases : continuation_param_aliases;
+    reference_result : reference_result
   }
 
 (* Print *)
@@ -245,20 +258,41 @@ let [@ocamlformat "disable"] print_continuation_param_aliases ppf
     (Variable.Map.print Flambda_kind.print) aliases_kind
     (Continuation.Map.print print_continuation_parameters) continuation_parameters
 
+let print_rewrite ppf = function
+  | Remove -> Format.fprintf ppf "Remove"
+  | Binding { var; bound_to } ->
+    Format.fprintf ppf "Binding { %a = %a}"
+      Variable.print var
+      Simple.print bound_to
+
+let [@ocamlformat "disable"] print_reference_result ppf { additionnal_epa; let_rewrites } =
+  Format.fprintf ppf
+    "@[<hov 1>(\
+       @[<hov 1>(additionnal_epa@ %a)@]@ \
+       @[<hov 1>(let_rewrites@ %a)@]\
+     )@]"
+    (Continuation.Map.print EPA.print) additionnal_epa
+    (Named_rewrite_id.Map.print print_rewrite) let_rewrites
+
 let [@ocamlformat "disable"] _print_result ppf
     { dead_variable_result = { required_names; reachable_code_ids };
-      continuation_param_aliases = { aliases_kind; continuation_parameters } } =
+      continuation_param_aliases = { aliases_kind; continuation_parameters };
+      reference_result = { additionnal_epa; let_rewrites } } =
   Format.fprintf ppf
     "@[<hov 1>(\
        @[<hov 1>(required_names@ %a)@]@ \
        @[<hov 1>(reachable_code_ids@ %a)@]@ \
        @[<hov 1>(aliases_kind@ %a)@]@ \
-       @[<hov 1>(continuation_parameters@ %a)@]\
+       @[<hov 1>(continuation_parameters@ %a)@]@ \
+       @[<hov 1>(additionnal_epa@ %a)@]@ \
+       @[<hov 1>(let_rewrites@ %a)@]\
      )@]"
     Name.Set.print required_names
     Reachable_code_ids.print reachable_code_ids
     (Variable.Map.print Flambda_kind.print) aliases_kind
     (Continuation.Map.print print_continuation_parameters) continuation_parameters
+    (Continuation.Map.print EPA.print) additionnal_epa
+    (Named_rewrite_id.Map.print print_rewrite) let_rewrites
 
 (* Creation *)
 (* ******** *)
@@ -1366,7 +1400,7 @@ module Non_escaping_references = struct
   type extra_ref_params = Bound_parameter.t list
 
   type extra_ref_args =
-    Cont_arg.t Numeric_types.Int.Map.t Apply_cont_rewrite_id.Map.t
+    Simple.t Numeric_types.Int.Map.t Apply_cont_rewrite_id.Map.t
     Continuation.Map.t
 
   type t =
@@ -1374,7 +1408,8 @@ module Non_escaping_references = struct
       non_escaping_makeblock : Flambda_kind.With_subkind.t list Variable.Map.t;
       continuations_with_live_ref : Variable.Set.t Continuation.Map.t;
       extra_ref_params_and_args :
-        (extra_ref_params * extra_ref_args) Continuation.Map.t
+        (extra_ref_params * extra_ref_args) Continuation.Map.t;
+      rewrites : rewrite Named_rewrite_id.Map.t
     }
 
   let escaping ~(dom : Dominator_graph.result) ~(dom_graph : Dominator_graph.t)
@@ -1593,30 +1628,25 @@ module Non_escaping_references = struct
     done;
     !res
 
-  module Fold_prims = struct
-    type rewrite =
-      | Remove
-      | Binding of
-          { var : Variable.t;
-            bound_to : Simple.t
-          }
+  let list_to_int_map l =
+    let _, map =
+      List.fold_left
+        (fun (i, fields) elt ->
+          let fields = Numeric_types.Int.Map.add i elt fields in
+          i + 1, fields)
+        (0, Numeric_types.Int.Map.empty)
+        l
+    in
+    map
 
+  let int_map_to_list m = List.map snd (Numeric_types.Int.Map.bindings m)
+
+  module Fold_prims = struct
     type env =
       { bindings : Simple.t Numeric_types.Int.Map.t Variable.Map.t;
         (* non escaping references bindings *)
         rewrites : rewrite Named_rewrite_id.Map.t
       }
-
-    let list_to_int_map l =
-      let _, map =
-        List.fold_left
-          (fun (i, fields) elt ->
-            let fields = Numeric_types.Int.Map.add i elt fields in
-            i + 1, fields)
-          (0, Numeric_types.Int.Map.empty)
-          l
-      in
-      map
 
     let apply_prim ~dom env rewrite_id var (prim : ref_prim) =
       match prim with
@@ -1698,7 +1728,8 @@ module Non_escaping_references = struct
         ~(non_escaping_refs : Flambda_kind.With_subkind.t list Variable.Map.t)
         ~continuations_with_live_ref ~dom ~source_info =
       let rewrites = ref Named_rewrite_id.Map.empty in
-      Continuation.Map.mapi
+      let extra_params_and_args =
+        Continuation.Map.mapi
         (fun cont (refs_needed : Variable.Set.t) ->
           let elt = Continuation.Map.find cont source_info.map in
           let env, extra_ref_params =
@@ -1727,11 +1758,6 @@ module Non_escaping_references = struct
                         append_int_map extra_args args)
                       refs_needed Numeric_types.Int.Map.empty
                   in
-                  let extra_args =
-                    Numeric_types.Int.Map.map
-                      (fun s -> Cont_arg.Simple s)
-                      extra_args
-                  in
                   extra_args)
               rewrites
           in
@@ -1739,7 +1765,8 @@ module Non_escaping_references = struct
             Continuation.Map.mapi refs_params_to_add elt.apply_cont_args
           in
           extra_ref_params, new_apply_cont_args)
-        continuations_with_live_ref
+        continuations_with_live_ref in
+      extra_params_and_args, !rewrites
   end
 
   (* TODO: For all continuations with live ref, add parameters for every field
@@ -1756,6 +1783,8 @@ module Non_escaping_references = struct
       ~(source_info : source_info)
       ~(callers : Continuation.Set.t Continuation.Map.t) : t =
     let escaping = escaping ~dom ~dom_graph ~source_info in
+    (* Format.printf "@[<hov 2>Escaping vars@ %a@]@." Variable.Set.print
+       escaping; *)
     let non_escaping_refs = non_escaping_makeblocks ~escaping ~source_info in
     if not (Variable.Map.is_empty non_escaping_refs)
     then
@@ -1781,13 +1810,14 @@ module Non_escaping_references = struct
       Misc.fatal_errorf
         "Toplevel continuation cannot have needed extra argument for ref: %a@."
         Variable.Set.print toplevel_used;
-    let extra_ref_params_and_args =
+    let extra_ref_params_and_args, rewrites =
       Fold_prims.do_stuff ~dom ~source_info ~continuations_with_live_ref
         ~non_escaping_refs
     in
     { extra_ref_params_and_args;
       non_escaping_makeblock = non_escaping_refs;
-      continuations_with_live_ref
+      continuations_with_live_ref;
+      rewrites
     }
 
   let pp_node { non_escaping_makeblock = _; continuations_with_live_ref; _ } ppf
@@ -1795,6 +1825,84 @@ module Non_escaping_references = struct
     match Continuation.Map.find cont continuations_with_live_ref with
     | exception Not_found -> ()
     | live_refs -> Format.fprintf ppf " %a" Variable.Set.print live_refs
+
+  let add_to_extra_params_and_args result =
+    let epa = Continuation.Map.empty in
+    let extra_ref_args :
+        EPA.Extra_arg.t Apply_cont_rewrite_id.Map.t list Continuation.Map.t =
+      Continuation.Map.fold
+        (fun _caller_cont (_extra_params, extra_args) all_extra_args ->
+          Continuation.Map.fold
+            (fun callee_cont
+                 (caller_extra_args :
+                   Simple.t Numeric_types.Int.Map.t Apply_cont_rewrite_id.Map.t)
+                 (all_extra_args :
+                   EPA.Extra_arg.t Apply_cont_rewrite_id.Map.t list
+                   Continuation.Map.t) :
+                 EPA.Extra_arg.t Apply_cont_rewrite_id.Map.t list
+                 Continuation.Map.t ->
+              Continuation.Map.update callee_cont
+                (fun previous_extra_args ->
+                  let previous_extra_args :
+                      EPA.Extra_arg.t Apply_cont_rewrite_id.Map.t list =
+                    match previous_extra_args with
+                    | None ->
+                      let extra_params, _ =
+                        Continuation.Map.find callee_cont
+                          result.extra_ref_params_and_args
+                      in
+                      List.map
+                        (fun _ -> Apply_cont_rewrite_id.Map.empty)
+                        extra_params
+                    | Some extra_args -> extra_args
+                  in
+                  let extra_args =
+                    Apply_cont_rewrite_id.Map.fold
+                      (fun rewrite_id (args : Simple.t Numeric_types.Int.Map.t)
+                           (previous_extra_args :
+                             EPA.Extra_arg.t Apply_cont_rewrite_id.Map.t list) ->
+                        let args = int_map_to_list args in
+                        List.map2
+                          (fun arg previous_extra_args ->
+                            Apply_cont_rewrite_id.Map.add rewrite_id
+                              (EPA.Extra_arg.Already_in_scope arg)
+                              previous_extra_args)
+                          args previous_extra_args)
+                      caller_extra_args previous_extra_args
+                  in
+                  Some extra_args)
+                all_extra_args)
+            extra_args all_extra_args)
+        result.extra_ref_params_and_args Continuation.Map.empty
+    in
+    let epa =
+      Continuation.Map.fold
+        (fun cont extra_args epa ->
+          let extra_params, _ =
+            Continuation.Map.find cont result.extra_ref_params_and_args
+          in
+          Continuation.Map.update cont
+            (fun epa_for_cont ->
+              let epa_for_cont =
+                match epa_for_cont with None -> EPA.empty | Some epa -> epa
+              in
+              let epa_for_cont =
+                List.fold_left2
+                  (fun epa_for_cont extra_param extra_args ->
+                    EPA.add epa_for_cont ~extra_param ~extra_args)
+                  epa_for_cont extra_params extra_args
+              in
+              Some epa_for_cont)
+            epa)
+        extra_ref_args epa
+    in
+    epa
+
+  let make_result result =
+    let additionnal_epa = add_to_extra_params_and_args result in
+    let let_rewrites = result.rewrites in
+    { additionnal_epa; let_rewrites }
+
 end
 
 module Control_flow_graph = struct
@@ -2243,11 +2351,11 @@ let analyze ?print_name ~return_continuation ~exn_continuation
               dom_graph)
           (Lazy.force dominator_graph_ppf));
       let control = Control_flow_graph.create ~dummy_toplevel_cont t in
-      let escaping =
+      let reference_analysis =
         Non_escaping_references.create ~dom:aliases ~dom_graph ~source_info:t
           ~callers:control.callers
       in
-      let pp_node = Non_escaping_references.pp_node escaping in
+      let pp_node = Non_escaping_references.pp_node reference_analysis in
       let continuation_parameters =
         Control_flow_graph.compute_continuation_extra_args_for_aliases
           ~source_info:t aliases control
@@ -2266,7 +2374,8 @@ let analyze ?print_name ~return_continuation ~exn_continuation
       (* Return *)
       let result =
         { dead_variable_result;
-          continuation_param_aliases = { aliases_kind; continuation_parameters }
+          continuation_param_aliases = { aliases_kind; continuation_parameters };
+          reference_result = Non_escaping_references.make_result reference_analysis;
         }
       in
       if debug then Format.eprintf "/// result@\n%a@\n@." _print_result result;

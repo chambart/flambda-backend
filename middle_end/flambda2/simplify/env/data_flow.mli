@@ -159,10 +159,26 @@ type continuation_param_aliases =
 val print_continuation_param_aliases :
   Format.formatter -> continuation_param_aliases -> unit
 
+type rewrite =
+  | Remove
+  | Binding of
+      { var : Variable.t;
+        bound_to : Simple.t
+      }
+
+type reference_result =
+  { additionnal_epa : Continuation_extra_params_and_args.t Continuation.Map.t;
+    let_rewrites : rewrite Named_rewrite_id.Map.t
+  }
+
+val print_reference_result :
+  Format.formatter -> reference_result -> unit
+
 (** The result of an analysis of the uses of variables in continuations. *)
 type result = private
   { dead_variable_result : dead_variable_result;
-    continuation_param_aliases : continuation_param_aliases
+    continuation_param_aliases : continuation_param_aliases;
+    reference_result : reference_result
   }
 
 (** Analyze the uses. *)
