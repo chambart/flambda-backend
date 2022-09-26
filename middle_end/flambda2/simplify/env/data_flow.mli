@@ -74,7 +74,7 @@ type ref_prim =
       Simple.t list
 
 val record_ref_named :
-  Named_rewrite_id.t -> Variable.t -> ref_prim -> t -> t
+  Named_rewrite_id.t -> bound_to:Variable.t -> ref_prim -> t -> t
 
 (** Add a variable binding to the symbol. Projections might get recorded
     multiple times. *)

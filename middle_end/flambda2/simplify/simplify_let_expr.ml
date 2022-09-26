@@ -231,7 +231,7 @@ let record_new_defining_expression_binding_for_data_flow dacc data_flow
                   Bound_pattern.must_be_singleton binding.let_bound
                 in
                 let var = VB.var bound_var in
-                ( DF.record_ref_named rewrite_id var
+                ( DF.record_ref_named rewrite_id ~bound_to:var
                     (Block_set (access_kind, init_or_assign, block, field, c))
                     data_flow,
                   Name_occurrences.empty ))
@@ -259,14 +259,14 @@ let record_new_defining_expression_binding_for_data_flow dacc data_flow
                   Bound_pattern.must_be_singleton binding.let_bound
                 in
                 let var = VB.var bound_var in
-                ( DF.record_ref_named rewrite_id var
+                ( DF.record_ref_named rewrite_id ~bound_to:var
                     (Block_load (access_kind, init_or_assign, block, field))
                     data_flow,
                   Name_occurrences.empty ))
           | Variadic (Make_block (kind, mutability, alloc_mode), args) ->
             let bound_var = Bound_pattern.must_be_singleton binding.let_bound in
             let var = VB.var bound_var in
-            ( DF.record_ref_named rewrite_id var
+            ( DF.record_ref_named rewrite_id ~bound_to:var
                 (Make_block (kind, mutability, alloc_mode, args))
                 data_flow,
               Name_occurrences.empty )
