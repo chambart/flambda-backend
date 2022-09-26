@@ -452,7 +452,7 @@ let record_var_binding var name_occurrences ~generate_phantom_lets t =
       let defined = Variable.Set.add var elt.defined in
       { elt with bindings; used_in_handler; defined })
 
-let record_ref_named rewrite_id bound_to prim t =
+let record_ref_named rewrite_id ~bound_to prim t =
   update_top_of_stack ~t ~f:(fun elt ->
       { elt with
         ref_prims_rev = (rewrite_id, bound_to, prim) :: elt.ref_prims_rev
