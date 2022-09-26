@@ -247,7 +247,13 @@ let record_new_defining_expression_binding_for_data_flow dacc data_flow
               data_flow)
       in
       match named with
-      | Simple _ | Set_of_closures _ | Rec_info _ ->
+      | Simple simple ->
+        let bound_var =
+          Bound_pattern.must_be_singleton binding.let_bound
+        in
+        let var = VB.var bound_var in
+        DF.record_var_alias var simple data_flow
+      | Set_of_closures _ | Rec_info _ ->
         record_var_binding data_flow free_names
       | Prim (prim, _) ->
         let data_flow, free_names =

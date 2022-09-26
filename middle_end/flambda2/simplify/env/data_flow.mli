@@ -63,6 +63,9 @@ val record_defined_var : Variable.t -> t -> t
 val record_var_binding :
   Variable.t -> Name_occurrences.t -> generate_phantom_lets:bool -> t -> t
 
+(** Add an alias in the current handler. *)
+val record_var_alias : Variable.t -> Simple.t -> t -> t
+
 type ref_prim =
   | Block_load of Flambda_primitive.Block_access_kind.t * Mutability.t *
       Variable.t * int
