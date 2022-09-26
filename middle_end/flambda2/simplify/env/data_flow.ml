@@ -1624,22 +1624,24 @@ module Non_escaping_references = struct
           let refs_params_to_add cont rewrites =
             Apply_cont_rewrite_id.Map.map
               (fun _args ->
-                let refs_needed =
+                match
                   Continuation.Map.find cont continuations_with_live_ref
-                in
-                let extra_args =
-                  Variable.Set.fold
-                    (fun ref_needed extra_args ->
-                      let args = Variable.Map.find ref_needed env.bindings in
-                      append_int_map extra_args args)
-                    refs_needed Numeric_types.Int.Map.empty
-                in
-                let extra_args =
-                  Numeric_types.Int.Map.map
-                    (fun s -> Cont_arg.Simple s)
-                    extra_args
-                in
-                extra_args)
+                with
+                | exception Not_found -> Numeric_types.Int.Map.empty
+                | refs_needed ->
+                  let extra_args =
+                    Variable.Set.fold
+                      (fun ref_needed extra_args ->
+                        let args = Variable.Map.find ref_needed env.bindings in
+                        append_int_map extra_args args)
+                      refs_needed Numeric_types.Int.Map.empty
+                  in
+                  let extra_args =
+                    Numeric_types.Int.Map.map
+                      (fun s -> Cont_arg.Simple s)
+                      extra_args
+                  in
+                  extra_args)
               rewrites
           in
           let new_apply_cont_args =
