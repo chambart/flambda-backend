@@ -130,7 +130,8 @@ let add_extra_params_for_continuation_param_aliases cont uacc rewrite_ids
   let required_extra_args =
     Continuation.Map.find cont continuation_parameters
   in
-  Variable.Set.fold
+  let epa =
+    Variable.Set.fold
     (fun var epa ->
       let extra_args =
         Apply_cont_rewrite_id.Map.of_set
@@ -144,6 +145,15 @@ let add_extra_params_for_continuation_param_aliases cont uacc rewrite_ids
       in
       EPA.add ~extra_param:(Bound_parameter.create var var_kind) ~extra_args epa)
     required_extra_args.extra_args_for_aliases extra_params_and_args
+  in
+
+  let Data_flow.{ additionnal_epa; _ } =
+    UA.reference_result uacc
+  in
+  match Continuation.Map.find cont additionnal_epa with
+  | exception Not_found -> epa
+  | additionnal_epa ->
+    EPA.concat ~outer:epa ~inner:additionnal_epa
 
 let rebuild_one_continuation_handler cont ~at_unit_toplevel
     (recursive : Recursive.t) ~params ~(extra_params_and_args : EPA.t)

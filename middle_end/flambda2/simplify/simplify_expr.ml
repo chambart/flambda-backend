@@ -80,7 +80,7 @@ and simplify_toplevel dacc expr ~params ~return_continuation ~return_arity
           | Closure { code_id; _ } -> Code_id.name code_id
         in
         let ({ dead_variable_result = { required_names; reachable_code_ids };
-               continuation_param_aliases
+               continuation_param_aliases; reference_result
              }
               : Data_flow.result) =
           Data_flow.analyze data_flow ~print_name ~code_age_relation
@@ -106,7 +106,7 @@ and simplify_toplevel dacc expr ~params ~return_continuation ~return_arity
             (Flambda_arity.With_subkinds.create [K.With_subkind.any_value])
         in
         let uacc =
-          UA.create ~required_names ~reachable_code_ids
+          UA.create ~required_names ~reachable_code_ids ~reference_result
             ~compute_slot_offsets:true ~continuation_param_aliases uenv dacc
         in
         rebuild uacc ~after_rebuild:(fun expr uacc -> expr, uacc))

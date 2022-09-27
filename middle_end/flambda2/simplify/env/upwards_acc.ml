@@ -37,6 +37,7 @@ type t =
        same field, as a Data_flow.dead_variable_result field. *)
     required_names : Name.Set.t;
     reachable_code_ids : Data_flow.Reachable_code_ids.t Or_unknown.t;
+    reference_result : Data_flow.reference_result;
     demoted_exn_handlers : Continuation.Set.t;
     slot_offsets : Slot_offsets.t Or_unknown.t;
     continuation_param_aliases : Data_flow.continuation_param_aliases
@@ -47,7 +48,9 @@ let [@ocamlformat "disable"] print ppf
         name_occurrences; used_value_slots; all_code = _;
         shareable_constants; cost_metrics; are_rebuilding_terms;
         generate_phantom_lets; required_names; reachable_code_ids;
-        demoted_exn_handlers; slot_offsets; continuation_param_aliases; } =
+        demoted_exn_handlers; slot_offsets; continuation_param_aliases;
+        reference_result = _ (* TODO *)
+      } =
   Format.fprintf ppf "@[<hov 1>(\
       @[<hov 1>(uenv@ %a)@]@ \
       @[<hov 1>(code_age_relation@ %a)@]@ \
@@ -80,7 +83,7 @@ let [@ocamlformat "disable"] print ppf
     Data_flow.print_continuation_param_aliases continuation_param_aliases
 
 let create ~required_names ~reachable_code_ids ~compute_slot_offsets
-    ~continuation_param_aliases uenv dacc =
+    ~continuation_param_aliases ~reference_result uenv dacc =
   let are_rebuilding_terms = DE.are_rebuilding_terms (DA.denv dacc) in
   let generate_phantom_lets = DE.generate_phantom_lets (DA.denv dacc) in
   let slot_offsets : _ Or_unknown.t =
@@ -110,7 +113,8 @@ let create ~required_names ~reachable_code_ids ~compute_slot_offsets
     reachable_code_ids;
     demoted_exn_handlers = DA.demoted_exn_handlers dacc;
     slot_offsets;
-    continuation_param_aliases
+    continuation_param_aliases;
+    reference_result
   }
 
 let creation_dacc t = t.creation_dacc
@@ -205,3 +209,5 @@ let slot_offsets t = t.slot_offsets
 let with_slot_offsets t slot_offsets = { t with slot_offsets }
 
 let continuation_param_aliases t = t.continuation_param_aliases
+
+let reference_result t = t.reference_result
