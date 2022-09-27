@@ -24,6 +24,7 @@ val create :
   reachable_code_ids:Data_flow.Reachable_code_ids.t Or_unknown.t ->
   compute_slot_offsets:bool ->
   continuation_param_aliases:Data_flow.continuation_param_aliases ->
+  reference_result:Data_flow.reference_result -> (* TODO use single data flow parameter *)
   Upwards_env.t ->
   Downwards_acc.t ->
   t
@@ -105,3 +106,5 @@ val slot_offsets : t -> Slot_offsets.t Or_unknown.t
 val with_slot_offsets : t -> Slot_offsets.t Or_unknown.t -> t
 
 val continuation_param_aliases : t -> Data_flow.continuation_param_aliases
+
+val reference_result : t -> Data_flow.reference_result

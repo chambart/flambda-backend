@@ -35,7 +35,7 @@ let keep_lifted_constant_only_if_used uacc acc lifted_constant =
   in
   if symbols_live || code_ids_live then LCS.add acc lifted_constant else acc
 
-let rebuild_let simplify_named_result removed_operations
+let rebuild_let simplify_named_result removed_operations ~rewrite_id
     ~lifted_constants_from_defining_expr ~at_unit_toplevel
     ~(closure_info : Closure_info.t) ~body uacc ~after_rebuild =
   let lifted_constants_from_defining_expr =
@@ -75,6 +75,32 @@ let rebuild_let simplify_named_result removed_operations
   let uacc = UA.notify_removed ~operation:removed_operations uacc in
   let bindings =
     Simplify_named_result.bindings_to_place_in_any_order simplify_named_result
+  in
+  let bindings =
+    let Data_flow.{ let_rewrites; _ } = UA.reference_result uacc in
+    match Named_rewrite_id.Map.find rewrite_id let_rewrites with
+    | exception Not_found -> bindings
+    | rewrite -> (
+      Format.printf "Rewrite %a@." Data_flow.print_rewrite rewrite;
+      match bindings with
+      | [] -> []
+      | _ :: _ :: _ -> assert false
+      | [binding] -> (
+        match rewrite with
+        | Remove ->
+          (* TODO differently: doesnt account for benefit *)
+          []
+        | Binding { var; bound_to } ->
+          let bv = Bound_pattern.must_be_singleton binding.let_bound in
+          let var' = Bound_var.var bv in
+          assert (Variable.equal var var');
+          let binding =
+            { binding with
+              simplified_defining_expr =
+                Simplified_named.create (Named.create_simple bound_to)
+            }
+          in
+          [binding]))
   in
   (* Return as quickly as possible if there is nothing to do. In this case, all
      constants get floated up to an outer binding. *)
@@ -182,8 +208,8 @@ let record_lifted_constant_for_data_flow data_flow lifted_constant =
     ~init:data_flow
     ~f:(record_lifted_constant_definition_for_data_flow ~being_defined)
 
-let record_new_defining_expression_binding_for_data_flow dacc data_flow
-    (binding : Simplify_named_result.binding_to_place) : DF.t =
+let record_new_defining_expression_binding_for_data_flow dacc ~rewrite_id
+    data_flow (binding : Simplify_named_result.binding_to_place) : DF.t =
   match binding.simplified_defining_expr with
   | { free_names; named; cost_metrics = _ } -> (
     let match_block_and_field ~block ~field ~free_names ~data_flow f =
@@ -201,7 +227,6 @@ let record_new_defining_expression_binding_for_data_flow dacc data_flow
               in
               f var field))
     in
-    let rewrite_id = Named_rewrite_id.create () in
     let can_be_removed =
       match named with
       | Simple _ | Set_of_closures _ | Rec_info _ -> true
@@ -248,9 +273,7 @@ let record_new_defining_expression_binding_for_data_flow dacc data_flow
       in
       match named with
       | Simple simple ->
-        let bound_var =
-          Bound_pattern.must_be_singleton binding.let_bound
-        in
+        let bound_var = Bound_pattern.must_be_singleton binding.let_bound in
         let var = VB.var bound_var in
         DF.record_var_alias var simple data_flow
       | Set_of_closures _ | Rec_info _ ->
@@ -287,7 +310,7 @@ let record_new_defining_expression_binding_for_data_flow dacc data_flow
         record_var_binding data_flow free_names)
 
 let update_data_flow dacc closure_info ~lifted_constants_from_defining_expr
-    simplify_named_result data_flow =
+    simplify_named_result ~rewrite_id data_flow =
   let data_flow =
     match Closure_info.in_or_out_of_closure closure_info with
     | In_a_closure ->
@@ -303,7 +326,7 @@ let update_data_flow dacc closure_info ~lifted_constants_from_defining_expr
   ListLabels.fold_left
     (Simplify_named_result.bindings_to_place_in_any_order simplify_named_result)
     ~init:data_flow
-    ~f:(record_new_defining_expression_binding_for_data_flow dacc)
+    ~f:(record_new_defining_expression_binding_for_data_flow dacc ~rewrite_id)
 
 let simplify_let0 ~simplify_expr ~simplify_toplevel dacc let_expr ~down_to_up
     bound_pattern ~body =
@@ -359,10 +382,11 @@ let simplify_let0 ~simplify_expr ~simplify_toplevel dacc let_expr ~down_to_up
     let dacc =
       DA.add_to_lifted_constant_accumulator dacc prior_lifted_constants
     in
+    let rewrite_id = Named_rewrite_id.create () in
     let dacc =
       DA.map_data_flow dacc
         ~f:
-          (update_data_flow dacc closure_info
+          (update_data_flow dacc closure_info ~rewrite_id
              ~lifted_constants_from_defining_expr simplify_named_result)
     in
     let at_unit_toplevel = DE.at_unit_toplevel (DA.denv dacc) in
@@ -374,7 +398,7 @@ let simplify_let0 ~simplify_expr ~simplify_toplevel dacc let_expr ~down_to_up
         let after_rebuild body uacc =
           rebuild_let simplify_named_result removed_operations
             ~lifted_constants_from_defining_expr ~at_unit_toplevel ~closure_info
-            ~body uacc ~after_rebuild
+            ~body uacc ~after_rebuild ~rewrite_id
         in
         rebuild_body uacc ~after_rebuild
       in

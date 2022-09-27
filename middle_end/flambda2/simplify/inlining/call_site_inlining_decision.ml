@@ -94,7 +94,8 @@ let speculative_inlining dacc ~apply ~function_type ~simplify_expr ~return_arity
            code_age_relation, and ignore the reachable_code_id part of the
            data_flow analysis. *)
         let ({ dead_variable_result = { required_names; reachable_code_ids = _ };
-               continuation_param_aliases
+               continuation_param_aliases;
+               reference_result
              }
               : Data_flow.result) =
           Data_flow.analyze data_flow ~code_age_relation:Code_age_relation.empty
@@ -122,7 +123,8 @@ let speculative_inlining dacc ~apply ~function_type ~simplify_expr ~return_arity
         in
         let uacc =
           UA.create ~required_names ~reachable_code_ids:Unknown
-            ~compute_slot_offsets:false ~continuation_param_aliases uenv dacc
+            ~compute_slot_offsets:false ~continuation_param_aliases
+            ~reference_result uenv dacc
         in
         rebuild uacc ~after_rebuild:(fun expr uacc -> expr, uacc))
   in
