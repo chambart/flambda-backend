@@ -1651,31 +1651,33 @@ module Non_escaping_references = struct
     let apply_prim ~dom env rewrite_id var (prim : ref_prim) =
       match prim with
       | Block_load (_kind, _mut, block, field) -> (
-        match Variable.Map.find block dom with
+        let block =
+          match Variable.Map.find block dom with
+          | exception Not_found -> block
+          | block -> block
+        in
+        match Variable.Map.find block env.bindings with
         | exception Not_found -> env
-        | block -> (
-          match Variable.Map.find block env.bindings with
-          | exception Not_found -> env
-          | fields ->
-            let bound_to = Numeric_types.Int.Map.find field fields in
-            let rewrite = Binding { var; bound_to } in
-            { env with
-              rewrites =
-                Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
-            }))
+        | fields ->
+          let bound_to = Numeric_types.Int.Map.find field fields in
+          let rewrite = Binding { var; bound_to } in
+          { env with
+            rewrites = Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
+          })
       | Block_set (_, _, block, field, value) -> (
-        match Variable.Map.find block dom with
+        let block =
+          match Variable.Map.find block dom with
+          | exception Not_found -> block
+          | block -> block
+        in
+        match Variable.Map.find block env.bindings with
         | exception Not_found -> env
-        | block -> (
-          match Variable.Map.find block env.bindings with
-          | exception Not_found -> env
-          | fields ->
-            let rewrite = Remove in
-            let fields = Numeric_types.Int.Map.add field value fields in
-            { bindings = Variable.Map.add block fields env.bindings;
-              rewrites =
-                Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
-            }))
+        | fields ->
+          let rewrite = Remove in
+          let fields = Numeric_types.Int.Map.add field value fields in
+          { bindings = Variable.Map.add block fields env.bindings;
+            rewrites = Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
+          })
       | Make_block (_, _, _, values) ->
         let rewrite = Remove in
         let fields = list_to_int_map values in
@@ -1846,14 +1848,16 @@ module Non_escaping_references = struct
                   let previous_extra_args :
                       EPA.Extra_arg.t Apply_cont_rewrite_id.Map.t list =
                     match previous_extra_args with
-                    | None ->
-                      let extra_params, _ =
+                    | None -> (
+                      match
                         Continuation.Map.find callee_cont
                           result.extra_ref_params_and_args
-                      in
-                      List.map
-                        (fun _ -> Apply_cont_rewrite_id.Map.empty)
-                        extra_params
+                      with
+                      | exception Not_found -> []
+                      | extra_params, _ ->
+                        List.map
+                          (fun _ -> Apply_cont_rewrite_id.Map.empty)
+                          extra_params)
                     | Some extra_args -> extra_args
                   in
                   let extra_args =
@@ -1878,8 +1882,12 @@ module Non_escaping_references = struct
     let epa =
       Continuation.Map.fold
         (fun cont extra_args epa ->
-          let extra_params, _ =
-            Continuation.Map.find cont result.extra_ref_params_and_args
+          let extra_params =
+            match
+              Continuation.Map.find cont result.extra_ref_params_and_args
+            with
+            | exception Not_found -> []
+            | extra_params, _ -> extra_params
           in
           Continuation.Map.update cont
             (fun epa_for_cont ->

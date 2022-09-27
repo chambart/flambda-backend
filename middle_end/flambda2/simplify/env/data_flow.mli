@@ -166,6 +166,9 @@ type rewrite =
         bound_to : Simple.t
       }
 
+val print_rewrite :
+  Format.formatter -> rewrite -> unit
+
 type reference_result =
   { additionnal_epa : Continuation_extra_params_and_args.t Continuation.Map.t;
     let_rewrites : rewrite Named_rewrite_id.Map.t
