@@ -249,7 +249,6 @@ let record_new_defining_expression_binding_for_data_flow dacc ~rewrite_id
           match prim with
           | Ternary (Block_set (access_kind, init_or_assign), block, field, c)
             ->
-            Format.printf "BLock_set@.";
             match_block_and_field ~block ~field ~free_names ~data_flow
               (fun block field ->
                 let bound_var =
