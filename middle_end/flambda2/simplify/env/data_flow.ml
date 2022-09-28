@@ -1442,22 +1442,25 @@ module Non_escaping_references = struct
             | v -> v
           in
           let new_escaping =
-            Variable.Set.filter
-              (fun flow_from ->
+            Variable.Set.fold
+              (fun flow_from escaping ->
                 let alias_from =
                   match Variable.Map.find flow_from dom with
                   | exception Not_found -> flow_from
                   | v -> v
                 in
-                not (Variable.equal alias_to alias_from))
-              flow_from
+                let is_escaping = not (Variable.equal alias_to alias_from) in
+                if is_escaping
+                then Variable.Set.add alias_from escaping
+                else escaping)
+              flow_from Variable.Set.empty
           in
-          Format.printf "From %a to %a@." Variable.Set.print flow_from
-            Variable.print flow_to;
-          if not (Variable.Set.is_empty new_escaping)
-          then
-            Format.printf "Escaping by alias %a@." Variable.Set.print
-              new_escaping;
+          (* Format.printf "From %a to %a@." Variable.Set.print flow_from
+           *   Variable.print flow_to; *)
+          (* if not (Variable.Set.is_empty new_escaping)
+           * then
+           *   Format.printf "Escaping by alias %a@." Variable.Set.print
+           *     new_escaping; *)
           Variable.Set.union escaping new_escaping)
         dom_graph.graph Variable.Set.empty
     in
