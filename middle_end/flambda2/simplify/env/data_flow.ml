@@ -1474,12 +1474,12 @@ module Non_escaping_references = struct
       let add_name_occurrences occurrences init =
         Name_occurrences.fold_variables occurrences ~init
           ~f:(fun escaping var ->
-              let escaping =
-                match Variable.Map.find var dom with
-                | exception Not_found -> escaping
-                | var -> Variable.Set.add var escaping
-              in
-              Variable.Set.add var escaping)
+            let escaping =
+              match Variable.Map.find var dom with
+              | exception Not_found -> escaping
+              | var -> Variable.Set.add var escaping
+            in
+            Variable.Set.add var escaping)
       in
       let escaping =
         add_name_occurrences elt.used_in_handler Variable.Set.empty
@@ -1512,8 +1512,8 @@ module Non_escaping_references = struct
           Variable.Set.union (escaping_by_use elt) escaping)
         source_info.map Variable.Set.empty
     in
-    if not (Variable.Set.is_empty escaping_by_use)
-    then Format.printf "Escaping by use %a@." Variable.Set.print escaping_by_use;
+    (* if not (Variable.Set.is_empty escaping_by_use)
+     * then Format.printf "Escaping by use %a@." Variable.Set.print escaping_by_use; *)
     let escaping_by_return =
       Continuation.Map.fold
         (fun _cont elt escaping ->
@@ -1521,23 +1521,25 @@ module Non_escaping_references = struct
             match Continuation.Map.find cont elt.apply_cont_args with
             | exception Not_found -> escaping
             | apply_cont_args ->
-              Variable.Set.fold (fun var escaping ->
+              Variable.Set.fold
+                (fun var escaping ->
                   let escaping =
                     match Variable.Map.find var dom with
                     | exception Not_found -> escaping
                     | var -> Variable.Set.add var escaping
                   in
                   Variable.Set.add var escaping)
-                (free_names_of_apply_cont_args apply_cont_args) escaping
+                (free_names_of_apply_cont_args apply_cont_args)
+                escaping
           in
           let escaping = add_escaping return_continuation escaping in
           add_escaping exn_continuation escaping)
         source_info.map Variable.Set.empty
     in
-    if not (Variable.Set.is_empty escaping_by_return)
-    then
-      Format.printf "Escaping by return %a@." Variable.Set.print
-        escaping_by_return;
+    (* if not (Variable.Set.is_empty escaping_by_return)
+     * then
+     *   Format.printf "Escaping by return %a@." Variable.Set.print
+     *     escaping_by_return; *)
     Variable.Set.union escaping_by_alias
       (Variable.Set.union escaping_by_return escaping_by_use)
 
@@ -1861,9 +1863,9 @@ module Non_escaping_references = struct
     let continuations_with_live_ref =
       continuations_with_live_ref ~non_escaping_refs ~dom ~source_info ~callers
     in
-    Format.printf "@[<hov 2>Cont using refs:@ %a@]@."
-      (Continuation.Map.print Variable.Set.print)
-      continuations_with_live_ref;
+    (* Format.printf "@[<hov 2>Cont using refs:@ %a@]@."
+     *   (Continuation.Map.print Variable.Set.print)
+     *   continuations_with_live_ref; *)
     let toplevel_used =
       Continuation.Map.find source_info.dummy_toplevel_cont
         continuations_with_live_ref
@@ -2462,8 +2464,11 @@ let analyze ?print_name ~return_continuation ~exn_continuation
           reference_result
         }
       in
-      Format.printf "let_rewrites %a@."
-        (Named_rewrite_id.Map.print print_rewrite)
-        result.reference_result.let_rewrites;
+      if not
+           (Named_rewrite_id.Map.is_empty result.reference_result.let_rewrites)
+      then
+        Format.printf "let_rewrites %a@."
+          (Named_rewrite_id.Map.print print_rewrite)
+          result.reference_result.let_rewrites;
       if debug then Format.eprintf "/// result@\n%a@\n@." _print_result result;
       result)

@@ -819,18 +819,18 @@ let make_rewrite_for_recursive_continuation uacc ~cont ~original_cont_scope
     | In_body { rewrite_ids } ->
       (* In the body, the rewrite will refer to the wrapper continuation, if
          there is one, which might have additionnal arguments for the aliases *)
-      let () =
-        Format.printf "EXTRA before %a@.%a@." Continuation.print cont EPA.print
-          extra_params_and_args
-      in
+      (* let () =
+       *   Format.printf "EXTRA before %a@.%a@." Continuation.print cont EPA.print
+       *     extra_params_and_args
+       * in *)
       let extra_params_and_args =
         add_extra_params_for_continuation_param_aliases cont uacc rewrite_ids
           extra_params_and_args
       in
-      let () =
-        Format.printf "EXTRA after %a@.%a@." Continuation.print cont EPA.print
-          extra_params_and_args
-      in
+      (* let () =
+       *   Format.printf "EXTRA after %a@.%a@." Continuation.print cont EPA.print
+       *     extra_params_and_args
+       * in *)
       extra_params_and_args
   in
   let extra_params_and_args =
@@ -844,12 +844,13 @@ let make_rewrite_for_recursive_continuation uacc ~cont ~original_cont_scope
       continuation_parameters) =
     Continuation.Map.find cont continuation_parameters
   in
-  Format.printf "make_rewrite %a %s@ params %a@ extra_params %a@ %a@."
-    Continuation.print cont
-    (match context with In_handler -> "In_handler" | In_body _ -> "In_body")
-    Bound_parameters.print original_params Bound_parameters.print
-    (EPA.extra_params extra_params_and_args)
-    Data_flow.print_continuation_parameters continuation_parameters;
+  ignore continuation_parameters;
+  (* Format.printf "make_rewrite %a %s@ params %a@ extra_params %a@ %a@."
+   *   Continuation.print cont
+   *   (match context with In_handler -> "In_handler" | In_body _ -> "In_body")
+   *   Bound_parameters.print original_params Bound_parameters.print
+   *   (EPA.extra_params extra_params_and_args)
+   *   Data_flow.print_continuation_parameters continuation_parameters; *)
   let kept_param param =
     let var = BP.var param in
     (not (Variable.Set.mem var removed_aliased_params_and_extra_params))
@@ -862,10 +863,10 @@ let make_rewrite_for_recursive_continuation uacc ~cont ~original_cont_scope
   let used_extra_params_list =
     Bound_parameters.filter kept_param extra_params
   in
-  let () =
-    Format.printf "AFTER filter %a@." Bound_parameters.print
-      used_extra_params_list
-  in
+  (* let () =
+   *   Format.printf "AFTER filter %a@." Bound_parameters.print
+   *     used_extra_params_list
+   * in *)
   let used_extra_params = Bound_parameters.to_set used_extra_params_list in
   let rewrite =
     Apply_cont_rewrite.create ~original_params ~used_params
