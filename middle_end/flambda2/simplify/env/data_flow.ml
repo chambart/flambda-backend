@@ -2436,12 +2436,27 @@ let analyze ?print_name ~return_continuation ~exn_continuation
               ~return_continuation ~exn_continuation ~continuation_parameters
               ~pp_node control)
           (Lazy.force control_flow_graph_ppf));
+      let reference_result =
+        Non_escaping_references.make_result reference_analysis
+      in
+      let required_names_after_ref_reference_analysis =
+        (* CR pchambart/gbury: this is an overapproximation of actually used new
+           parameters. We might want to filter this using another round of
+           dead_analysis *)
+        Continuation.Map.fold
+          (fun _cont epa required_names ->
+            let params = Bound_parameters.var_set (EPA.extra_params epa) in
+            Name.Set.union required_names (Name.set_of_var_set params))
+          reference_result.additionnal_epa dead_variable_result.required_names
+      in
       (* Return *)
       let result =
-        { dead_variable_result;
+        { dead_variable_result =
+            { dead_variable_result with
+              required_names = required_names_after_ref_reference_analysis
+            };
           continuation_param_aliases = { aliases_kind; continuation_parameters };
-          reference_result =
-            Non_escaping_references.make_result reference_analysis
+          reference_result
         }
       in
       Format.printf "let_rewrites %a@."
