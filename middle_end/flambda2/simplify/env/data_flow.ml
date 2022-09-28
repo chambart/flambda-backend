@@ -261,9 +261,8 @@ let [@ocamlformat "disable"] print_continuation_param_aliases ppf
 let print_rewrite ppf = function
   | Remove -> Format.fprintf ppf "Remove"
   | Binding { var; bound_to } ->
-    Format.fprintf ppf "Binding { %a = %a}"
-      Variable.print var
-      Simple.print bound_to
+    Format.fprintf ppf "Binding { %a = %a}" Variable.print var Simple.print
+      bound_to
 
 let [@ocamlformat "disable"] print_reference_result ppf { additionnal_epa; let_rewrites } =
   Format.fprintf ppf
@@ -1412,8 +1411,27 @@ module Non_escaping_references = struct
       rewrites : rewrite Named_rewrite_id.Map.t
     }
 
+  let free_names_of_apply_cont_args
+      (apply_cont_args :
+        Cont_arg.t Numeric_types.Int.Map.t Apply_cont_rewrite_id.Map.t) :
+      Variable.Set.t =
+    Apply_cont_rewrite_id.Map.fold
+      (fun _ args free ->
+        Numeric_types.Int.Map.fold
+          (fun _ (arg : Cont_arg.t) free ->
+            match arg with
+            | Function_result -> free
+            | New_let_binding _ ->
+              free (* Doesn't really matter, already escaping *)
+            | Simple s -> (
+              match Simple.must_be_var s with
+              | None -> free
+              | Some (var, _coer) -> Variable.Set.add var free))
+          args free)
+      apply_cont_args Variable.Set.empty
+
   let escaping ~(dom : Dominator_graph.result) ~(dom_graph : Dominator_graph.t)
-      ~(source_info : source_info) =
+      ~(source_info : source_info) ~return_continuation ~exn_continuation =
     ignore source_info;
     let escaping_by_alias =
       Variable.Map.fold
@@ -1452,7 +1470,13 @@ module Non_escaping_references = struct
     let escaping_by_use elt =
       let add_name_occurrences occurrences init =
         Name_occurrences.fold_variables occurrences ~init
-          ~f:(fun escaping var -> Variable.Set.add var escaping)
+          ~f:(fun escaping var ->
+              let escaping =
+                match Variable.Map.find var dom with
+                | exception Not_found -> escaping
+                | var -> Variable.Set.add var escaping
+              in
+              Variable.Set.add var escaping)
       in
       let escaping =
         add_name_occurrences elt.used_in_handler Variable.Set.empty
@@ -1488,9 +1512,29 @@ module Non_escaping_references = struct
     if not (Variable.Set.is_empty escaping_by_use)
     then Format.printf "Escaping by use %a@." Variable.Set.print escaping_by_use;
     let escaping_by_return =
-      (* TODO mark argument of the return and exn_return cont to be escaping *)
-      Variable.Set.empty
+      Continuation.Map.fold
+        (fun _cont elt escaping ->
+          let add_escaping cont escaping =
+            match Continuation.Map.find cont elt.apply_cont_args with
+            | exception Not_found -> escaping
+            | apply_cont_args ->
+              Variable.Set.fold (fun var escaping ->
+                  let escaping =
+                    match Variable.Map.find var dom with
+                    | exception Not_found -> escaping
+                    | var -> Variable.Set.add var escaping
+                  in
+                  Variable.Set.add var escaping)
+                (free_names_of_apply_cont_args apply_cont_args) escaping
+          in
+          let escaping = add_escaping return_continuation escaping in
+          add_escaping exn_continuation escaping)
+        source_info.map Variable.Set.empty
     in
+    if not (Variable.Set.is_empty escaping_by_return)
+    then
+      Format.printf "Escaping by return %a@." Variable.Set.print
+        escaping_by_return;
     Variable.Set.union escaping_by_alias
       (Variable.Set.union escaping_by_return escaping_by_use)
 
@@ -1648,7 +1692,8 @@ module Non_escaping_references = struct
         rewrites : rewrite Named_rewrite_id.Map.t
       }
 
-    let apply_prim ~dom env rewrite_id var (prim : ref_prim) =
+    let apply_prim ~dom ~non_escaping_refs env rewrite_id var (prim : ref_prim)
+        =
       match prim with
       | Block_load (_kind, _mut, block, field) -> (
         let block =
@@ -1673,17 +1718,22 @@ module Non_escaping_references = struct
         match Variable.Map.find block env.bindings with
         | exception Not_found -> env
         | fields ->
+          Format.printf "Remove Block set %a@." Variable.print var;
           let rewrite = Remove in
           let fields = Numeric_types.Int.Map.add field value fields in
           { bindings = Variable.Map.add block fields env.bindings;
             rewrites = Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
           })
       | Make_block (_, _, _, values) ->
-        let rewrite = Remove in
-        let fields = list_to_int_map values in
-        { bindings = Variable.Map.add var fields env.bindings;
-          rewrites = Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
-        }
+        if not (Variable.Map.mem var non_escaping_refs)
+        then env
+        else
+          let () = Format.printf "Remove Makeblock %a@." Variable.print var in
+          let rewrite = Remove in
+          let fields = list_to_int_map values in
+          { bindings = Variable.Map.add var fields env.bindings;
+            rewrites = Named_rewrite_id.Map.add rewrite_id rewrite env.rewrites
+          }
 
     let init_env
         ~(non_escaping_refs : Flambda_kind.With_subkind.t list Variable.Map.t)
@@ -1732,42 +1782,45 @@ module Non_escaping_references = struct
       let rewrites = ref Named_rewrite_id.Map.empty in
       let extra_params_and_args =
         Continuation.Map.mapi
-        (fun cont (refs_needed : Variable.Set.t) ->
-          let elt = Continuation.Map.find cont source_info.map in
-          let env, extra_ref_params =
-            init_env ~non_escaping_refs ~refs_needed ~rewrites:!rewrites
-          in
-          let env =
-            List.fold_left
-              (fun env (rewrite_id, var, prim) ->
-                apply_prim ~dom env rewrite_id var prim)
-              env
-              (List.rev elt.ref_prims_rev)
-          in
-          rewrites := env.rewrites;
-          let refs_params_to_add cont rewrites =
-            Apply_cont_rewrite_id.Map.map
-              (fun _args ->
-                match
-                  Continuation.Map.find cont continuations_with_live_ref
-                with
-                | exception Not_found -> Numeric_types.Int.Map.empty
-                | refs_needed ->
-                  let extra_args =
-                    Variable.Set.fold
-                      (fun ref_needed extra_args ->
-                        let args = Variable.Map.find ref_needed env.bindings in
-                        append_int_map extra_args args)
-                      refs_needed Numeric_types.Int.Map.empty
-                  in
-                  extra_args)
-              rewrites
-          in
-          let new_apply_cont_args =
-            Continuation.Map.mapi refs_params_to_add elt.apply_cont_args
-          in
-          extra_ref_params, new_apply_cont_args)
-        continuations_with_live_ref in
+          (fun cont (refs_needed : Variable.Set.t) ->
+            let elt = Continuation.Map.find cont source_info.map in
+            let env, extra_ref_params =
+              init_env ~non_escaping_refs ~refs_needed ~rewrites:!rewrites
+            in
+            let env =
+              List.fold_left
+                (fun env (rewrite_id, var, prim) ->
+                  apply_prim ~dom ~non_escaping_refs env rewrite_id var prim)
+                env
+                (List.rev elt.ref_prims_rev)
+            in
+            rewrites := env.rewrites;
+            let refs_params_to_add cont rewrites =
+              Apply_cont_rewrite_id.Map.map
+                (fun _args ->
+                  match
+                    Continuation.Map.find cont continuations_with_live_ref
+                  with
+                  | exception Not_found -> Numeric_types.Int.Map.empty
+                  | refs_needed ->
+                    let extra_args =
+                      Variable.Set.fold
+                        (fun ref_needed extra_args ->
+                          let args =
+                            Variable.Map.find ref_needed env.bindings
+                          in
+                          append_int_map extra_args args)
+                        refs_needed Numeric_types.Int.Map.empty
+                    in
+                    extra_args)
+                rewrites
+            in
+            let new_apply_cont_args =
+              Continuation.Map.mapi refs_params_to_add elt.apply_cont_args
+            in
+            extra_ref_params, new_apply_cont_args)
+          continuations_with_live_ref
+      in
       extra_params_and_args, !rewrites
   end
 
@@ -1783,8 +1836,12 @@ module Non_escaping_references = struct
 
   let create ~(dom : Dominator_graph.result) ~(dom_graph : Dominator_graph.t)
       ~(source_info : source_info)
-      ~(callers : Continuation.Set.t Continuation.Map.t) : t =
-    let escaping = escaping ~dom ~dom_graph ~source_info in
+      ~(callers : Continuation.Set.t Continuation.Map.t) ~return_continuation
+      ~exn_continuation : t =
+    let escaping =
+      escaping ~dom ~dom_graph ~source_info ~return_continuation
+        ~exn_continuation
+    in
     (* Format.printf "@[<hov 2>Escaping vars@ %a@]@." Variable.Set.print
        escaping; *)
     let non_escaping_refs = non_escaping_makeblocks ~escaping ~source_info in
@@ -1910,7 +1967,6 @@ module Non_escaping_references = struct
     let additionnal_epa = add_to_extra_params_and_args result in
     let let_rewrites = result.rewrites in
     { additionnal_epa; let_rewrites }
-
 end
 
 module Control_flow_graph = struct
@@ -2361,7 +2417,7 @@ let analyze ?print_name ~return_continuation ~exn_continuation
       let control = Control_flow_graph.create ~dummy_toplevel_cont t in
       let reference_analysis =
         Non_escaping_references.create ~dom:aliases ~dom_graph ~source_info:t
-          ~callers:control.callers
+          ~callers:control.callers ~return_continuation ~exn_continuation
       in
       let pp_node = Non_escaping_references.pp_node reference_analysis in
       let continuation_parameters =
@@ -2383,8 +2439,12 @@ let analyze ?print_name ~return_continuation ~exn_continuation
       let result =
         { dead_variable_result;
           continuation_param_aliases = { aliases_kind; continuation_parameters };
-          reference_result = Non_escaping_references.make_result reference_analysis;
+          reference_result =
+            Non_escaping_references.make_result reference_analysis
         }
       in
+      Format.printf "let_rewrites %a@."
+        (Named_rewrite_id.Map.print print_rewrite)
+        result.reference_result.let_rewrites;
       if debug then Format.eprintf "/// result@\n%a@\n@." _print_result result;
       result)
