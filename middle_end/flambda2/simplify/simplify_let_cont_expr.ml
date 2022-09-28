@@ -130,8 +130,7 @@ let add_extra_params_for_continuation_param_aliases cont uacc rewrite_ids
   let required_extra_args =
     Continuation.Map.find cont continuation_parameters
   in
-  let epa =
-    Variable.Set.fold
+  Variable.Set.fold
     (fun var epa ->
       let extra_args =
         Apply_cont_rewrite_id.Map.of_set
@@ -145,15 +144,13 @@ let add_extra_params_for_continuation_param_aliases cont uacc rewrite_ids
       in
       EPA.add ~extra_param:(Bound_parameter.create var var_kind) ~extra_args epa)
     required_extra_args.extra_args_for_aliases extra_params_and_args
-  in
 
-  let Data_flow.{ additionnal_epa; _ } =
-    UA.reference_result uacc
-  in
+let add_extra_params_for_reference_fields cont uacc extra_params_and_args =
+  let Data_flow.{ additionnal_epa; _ } = UA.reference_result uacc in
   match Continuation.Map.find cont additionnal_epa with
-  | exception Not_found -> epa
+  | exception Not_found -> extra_params_and_args
   | additionnal_epa ->
-    EPA.concat ~outer:epa ~inner:additionnal_epa
+    EPA.concat ~outer:extra_params_and_args ~inner:additionnal_epa
 
 let rebuild_one_continuation_handler cont ~at_unit_toplevel
     (recursive : Recursive.t) ~params ~(extra_params_and_args : EPA.t)
@@ -253,6 +250,7 @@ let rebuild_one_continuation_handler cont ~at_unit_toplevel
       let extra_params_and_args =
         add_extra_params_for_continuation_param_aliases cont uacc rewrite_ids
           extra_params_and_args
+        |> add_extra_params_for_reference_fields cont uacc
       in
       let { extra_params_used_as_normal; extra_params_not_used_as_normal } =
         compute_used_extra_params uacc extra_params_and_args
@@ -821,8 +819,22 @@ let make_rewrite_for_recursive_continuation uacc ~cont ~original_cont_scope
     | In_body { rewrite_ids } ->
       (* In the body, the rewrite will refer to the wrapper continuation, if
          there is one, which might have additionnal arguments for the aliases *)
-      add_extra_params_for_continuation_param_aliases cont uacc rewrite_ids
-        extra_params_and_args
+      let () =
+        Format.printf "EXTRA before %a@.%a@." Continuation.print cont EPA.print
+          extra_params_and_args
+      in
+      let extra_params_and_args =
+        add_extra_params_for_continuation_param_aliases cont uacc rewrite_ids
+          extra_params_and_args
+      in
+      let () =
+        Format.printf "EXTRA after %a@.%a@." Continuation.print cont EPA.print
+          extra_params_and_args
+      in
+      extra_params_and_args
+  in
+  let extra_params_and_args =
+    add_extra_params_for_reference_fields cont uacc extra_params_and_args
   in
   let required_names = UA.required_names uacc in
   let Data_flow.{ continuation_parameters; _ } =
@@ -849,6 +861,10 @@ let make_rewrite_for_recursive_continuation uacc ~cont ~original_cont_scope
   let extra_params = EPA.extra_params extra_params_and_args in
   let used_extra_params_list =
     Bound_parameters.filter kept_param extra_params
+  in
+  let () =
+    Format.printf "AFTER filter %a@." Bound_parameters.print
+      used_extra_params_list
   in
   let used_extra_params = Bound_parameters.to_set used_extra_params_list in
   let rewrite =
