@@ -81,7 +81,7 @@ let rebuild_let simplify_named_result removed_operations ~rewrite_id
     match Named_rewrite_id.Map.find rewrite_id let_rewrites with
     | exception Not_found -> bindings
     | rewrite -> (
-      Format.printf "Rewrite %a@." Data_flow.print_rewrite rewrite;
+      (* Format.printf "Rewrite %a@." Data_flow.print_rewrite rewrite; *)
       match bindings with
       | [] -> []
       | _ :: _ :: _ -> assert false
