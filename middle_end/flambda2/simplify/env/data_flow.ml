@@ -14,6 +14,10 @@
 
 module EPA = Continuation_extra_params_and_args
 
+let debug = Sys.getenv_opt "DF" <> None
+
+let ref_to_var_debug = Sys.getenv_opt "RTV" <> None
+
 (* Helper module *)
 (* ************* *)
 
@@ -1594,7 +1598,7 @@ module Non_escaping_references = struct
                 (prims_using_ref ~non_escaping_refs ~dom prim))
             Variable.Set.empty elt.ref_prims_rev
         in
-        if not (Variable.Set.is_empty used)
+        if (not (Variable.Set.is_empty used)) && ref_to_var_debug
         then
           Format.printf "Cont using ref %a %a@." Continuation.print _cont
             Variable.Set.print used;
@@ -1612,7 +1616,7 @@ module Non_escaping_references = struct
               else used_ref)
             Variable.Set.empty elt.ref_prims_rev
         in
-        if not (Variable.Set.is_empty defined)
+        if not (Variable.Set.is_empty defined) && ref_to_var_debug
         then
           Format.printf "Cont defining ref %a %a@." Continuation.print _cont
             Variable.Set.print defined;
@@ -1723,7 +1727,8 @@ module Non_escaping_references = struct
         match Variable.Map.find block env.bindings with
         | exception Not_found -> env
         | fields ->
-          Format.printf "Remove Block set %a@." Variable.print var;
+          if ref_to_var_debug
+          then Format.printf "Remove Block set %a@." Variable.print var;
           let rewrite = Remove in
           let fields = Numeric_types.Int.Map.add field value fields in
           { bindings = Variable.Map.add block fields env.bindings;
@@ -1733,7 +1738,10 @@ module Non_escaping_references = struct
         if not (Variable.Map.mem var non_escaping_refs)
         then env
         else
-          let () = Format.printf "Remove Makeblock %a@." Variable.print var in
+          let () =
+            if ref_to_var_debug
+            then Format.printf "Remove Makeblock %a@." Variable.print var
+          in
           let rewrite = Remove in
           let fields = list_to_int_map values in
           { bindings = Variable.Map.add var fields env.bindings;
@@ -1851,7 +1859,7 @@ module Non_escaping_references = struct
     (* Format.printf "@[<hov 2>Escaping vars@ %a@]@." Variable.Set.print
        escaping; *)
     let non_escaping_refs = non_escaping_makeblocks ~escaping ~source_info in
-    if not (Variable.Map.is_empty non_escaping_refs)
+    if (not (Variable.Map.is_empty non_escaping_refs)) && ref_to_var_debug
     then
       Format.printf "Non escaping makeblocks %a@."
         (Variable.Map.print (fun ppf kinds ->
@@ -2381,8 +2389,6 @@ let control_flow_graph_ppf =
           close_out ch);
       Some ppf)
 
-let debug = Sys.getenv_opt "DF" <> None
-
 let analyze ?print_name ~return_continuation ~exn_continuation
     ~code_age_relation ~used_value_slots t : result =
   Profile.record_call ~accumulate:true "data_flow" (fun () ->
@@ -2465,7 +2471,8 @@ let analyze ?print_name ~return_continuation ~exn_continuation
         }
       in
       if not
-           (Named_rewrite_id.Map.is_empty result.reference_result.let_rewrites)
+          (Named_rewrite_id.Map.is_empty result.reference_result.let_rewrites)
+      && ref_to_var_debug
       then
         Format.printf "let_rewrites %a@."
           (Named_rewrite_id.Map.print print_rewrite)
