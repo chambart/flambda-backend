@@ -1230,6 +1230,7 @@ module Dominator_graph = struct
        t.graph; *)
     t
 
+
   let find_dom var doms =
     (* there are tow cases where the variable is not in the "doms" maps:
 
@@ -2169,7 +2170,7 @@ module Control_flow_graph = struct
     in
     if not (Variable.Set.is_empty extra_args_for_toplevel_cont)
     then
-      Format.eprintf
+      Misc.fatal_errorf
         "ERROR:@\nToplevel continuation cannot have needed extra argument: %a@."
         Variable.Set.print extra_args_for_toplevel_cont;
     let added_extra_args = !res in
