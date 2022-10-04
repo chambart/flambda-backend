@@ -1775,11 +1775,11 @@ module Non_escaping_references = struct
                 bindings = Variable.Map.add ref_needed fields env.bindings
               }
             in
-            env, ref_params @ params)
+            env, List.rev_append ref_params params)
           refs_needed
           ({ bindings = Variable.Map.empty; rewrites }, [])
       in
-      env, params
+      env, List.rev params
 
     let append_int_map i1 i2 =
       if Numeric_types.Int.Map.is_empty i1
