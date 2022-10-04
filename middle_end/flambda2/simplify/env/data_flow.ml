@@ -1759,7 +1759,7 @@ module Non_escaping_references = struct
             let ref_params =
               List.mapi
                 (fun i kind ->
-                  let name = Variable.name ref_needed in
+                  let name = Variable.unique_name ref_needed in
                   let var = Variable.create (Printf.sprintf "%s_%i" name i) in
                   Bound_parameter.create var kind)
                 arity
