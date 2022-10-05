@@ -124,7 +124,8 @@ let create_non_recursive_let_cont' are_rebuilding cont handler ~body
       ~num_free_occurrences_of_cont_in_body:
         (Known num_free_occurrences_of_cont_in_body) ~is_applied_with_traps
 
-let create_non_recursive_let_cont_without_free_names are_rebuilding cont handler ~body =
+let create_non_recursive_let_cont_without_free_names are_rebuilding cont handler
+    ~body =
   if ART.do_not_rebuild_terms are_rebuilding
   then term_not_rebuilt
   else

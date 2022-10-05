@@ -1230,7 +1230,6 @@ module Dominator_graph = struct
        t.graph; *)
     t
 
-
   let find_dom var doms =
     (* there are tow cases where the variable is not in the "doms" maps:
 
@@ -1617,7 +1616,7 @@ module Non_escaping_references = struct
               else used_ref)
             Variable.Set.empty elt.ref_prims_rev
         in
-        if not (Variable.Set.is_empty defined) && ref_to_var_debug
+        if (not (Variable.Set.is_empty defined)) && ref_to_var_debug
         then
           Format.printf "Cont defining ref %a %a@." Continuation.print _cont
             Variable.Set.print defined;
@@ -2471,9 +2470,9 @@ let analyze ?print_name ~return_continuation ~exn_continuation
           reference_result
         }
       in
-      if not
-          (Named_rewrite_id.Map.is_empty result.reference_result.let_rewrites)
-      && ref_to_var_debug
+      if (not
+            (Named_rewrite_id.Map.is_empty result.reference_result.let_rewrites))
+         && ref_to_var_debug
       then
         Format.printf "let_rewrites %a@."
           (Named_rewrite_id.Map.print print_rewrite)

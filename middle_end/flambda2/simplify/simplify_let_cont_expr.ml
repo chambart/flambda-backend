@@ -857,7 +857,6 @@ let make_rewrite_for_recursive_continuation uacc ~cont ~original_cont_scope
     && Name.Set.mem (Name.var var) required_names
   in
   let used_params_list = Bound_parameters.filter kept_param original_params in
-
   let used_params = Bound_parameters.to_set used_params_list in
   let extra_params = EPA.extra_params extra_params_and_args in
   let used_extra_params_list =
@@ -974,7 +973,6 @@ let after_one_recursive_let_cont_handler_rebuilt cont ~original_cont_scope
     in
     UA.with_name_occurrences uacc ~name_occurrences
   in
-
   rebuild_recursive_let_cont_handlers cont ~params ~original_cont_scope
     cont_handler ~handler ~original_params ~extra_params_and_args ~rewrite_ids
     uacc ~after_rebuild
@@ -1126,13 +1124,11 @@ let rebuild_recursive_let_cont ~body handlers ~cost_metrics_of_handlers
         uacc )
     | Wrapper_needed ->
       Format.printf "Introduce wrapper %a@." Continuation.print cont;
-
       let rewrite =
         match UE.find_apply_cont_rewrite (UA.uenv uacc) cont with
         | None -> assert false
         | Some rewrite -> rewrite
       in
-
       let rec_params =
         let original_params =
           Bound_parameters.to_list @@ Apply_cont_rewrite.original_params rewrite
@@ -1156,7 +1152,6 @@ let rebuild_recursive_let_cont ~body handlers ~cost_metrics_of_handlers
           (used_original_params @ used_extra_params)
         (* TODO change -> already computed elsewhere *)
       in
-
       let rec_cont =
         let args =
           List.map (fun param -> Simple.var (BP.var param)) rec_params
@@ -1168,7 +1163,6 @@ let rebuild_recursive_let_cont ~body handlers ~cost_metrics_of_handlers
           (UA.are_rebuilding_terms uacc)
           handlers ~body
       in
-
       let params =
         recursive_let_cont_handler_wrapper_params uacc ~cont ~rewrite
       in
@@ -1184,7 +1178,6 @@ let rebuild_recursive_let_cont ~body handlers ~cost_metrics_of_handlers
       in
       expr, uacc
   in
-
   let uacc =
     UA.add_cost_metrics
       (Cost_metrics.increase_due_to_let_cont_recursive ~cost_metrics_of_handlers)

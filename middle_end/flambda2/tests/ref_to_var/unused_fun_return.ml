@@ -14,8 +14,8 @@ let g x y =
 
 let mouf x y =
   let r = ref 0 in
-  (* This is not marked as invariant because not a variable. Would be
-     the same thing with a const : TODO improve this *)
+  (* This is not marked as invariant because not a variable. Would be the same
+     thing with a const : TODO improve this *)
   let o = ref (1, 2) in
   while Sys.opaque_identity true do
     let _v = f x in
@@ -23,7 +23,6 @@ let mouf x y =
     r := y + fst (Sys.opaque_identity !o)
   done;
   !r
-
 
 (* let g b x y z =
  *   let kont r o =
