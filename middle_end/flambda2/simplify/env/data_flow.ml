@@ -1646,12 +1646,24 @@ module Non_escaping_references = struct
             Queue.add k q;
             q_s := Continuation.Set.add k !q_s) )
     in
+    let continuations_using_refs_but_not_defining_them =
+      Continuation.Map.merge (fun _cont defined used ->
+          match defined, used with
+          | None, None -> assert false (* *)
+          | None, Some _used ->
+            Misc.fatal_errorf "In Data_flow: incomplete map of continuation defining refs"
+          | Some _defined, None ->
+            Misc.fatal_errorf "In Data_flow: incomplete map of continuation using refs"
+          | Some defined, Some used ->
+            Some (Variable.Set.diff used defined)
+        ) continuations_defining_refs continuations_using_refs
+    in
     let () =
       Continuation.Map.iter
         (fun cont used -> if not (Variable.Set.is_empty used) then push cont)
-        continuations_using_refs
+        continuations_using_refs_but_not_defining_them
     in
-    let res = ref continuations_using_refs in
+    let res = ref continuations_using_refs_but_not_defining_them in
     while not (q_is_empty ()) do
       let k = pop () in
       (* let elt = Continuation.Map.find k source_info.map in *)
