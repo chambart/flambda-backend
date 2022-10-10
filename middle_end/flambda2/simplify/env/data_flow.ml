@@ -1610,10 +1610,10 @@ module Non_escaping_references = struct
       (fun _cont elt ->
         let defined =
           List.fold_left
-            (fun used_ref (_id, var, _prim) ->
+            (fun defined_refs (_id, var, _prim) ->
               if Variable.Map.mem var non_escaping_refs
-              then Variable.Set.add var used_ref
-              else used_ref)
+              then Variable.Set.add var defined_refs
+              else defined_refs)
             Variable.Set.empty elt.ref_prims_rev
         in
         if (not (Variable.Set.is_empty defined)) && ref_to_var_debug
