@@ -1435,7 +1435,7 @@ module Non_escaping_references = struct
       apply_cont_args Variable.Set.empty
 
   let escaping ~(dom : Dominator_graph.result) ~(dom_graph : Dominator_graph.t)
-      ~(source_info : source_info) ~return_continuation ~exn_continuation =
+      ~(source_info : source_info) ~required_names ~return_continuation ~exn_continuation =
     ignore source_info;
     let escaping_by_alias =
       Variable.Map.fold
@@ -1490,7 +1490,10 @@ module Non_escaping_references = struct
       in
       let escaping =
         Name.Map.fold
-          (fun _ deps escaping -> add_name_occurrences deps escaping)
+          (fun name deps escaping ->
+             if Name.Set.mem name required_names then
+               add_name_occurrences deps escaping
+             else escaping)
           elt.bindings escaping
       in
       let escaping =
@@ -1863,10 +1866,10 @@ module Non_escaping_references = struct
   let create ~(dom : Dominator_graph.result) ~(dom_graph : Dominator_graph.t)
       ~(source_info : source_info)
       ~(callers : Continuation.Set.t Continuation.Map.t) ~return_continuation
-      ~exn_continuation : t =
+      ~exn_continuation ~required_names : t =
     let escaping =
       escaping ~dom ~dom_graph ~source_info ~return_continuation
-        ~exn_continuation
+        ~exn_continuation ~required_names
     in
     (* Format.printf "@[<hov 2>Escaping vars@ %a@]@." Variable.Set.print
        escaping; *)
@@ -2442,6 +2445,7 @@ let analyze ?print_name ~return_continuation ~exn_continuation
       let reference_analysis =
         Non_escaping_references.create ~dom:aliases ~dom_graph ~source_info:t
           ~callers:control.callers ~return_continuation ~exn_continuation
+          ~required_names:dead_variable_result.required_names
       in
       let pp_node = Non_escaping_references.pp_node reference_analysis in
       let continuation_parameters =
