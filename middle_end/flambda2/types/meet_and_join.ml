@@ -519,6 +519,9 @@ and meet_expanded_head env (expanded1 : ET.t) (expanded2 : ET.t) :
     ET.t meet_result =
   match ET.descr expanded1, ET.descr expanded2 with
   | Unknown, Unknown -> Ok (Both_inputs, env)
+  (* Left_input / Right_input is more precise than bottom, We prefer to return
+     it instead of bottom when possible. See pairwise_disjunction_meet for cases
+     where it matters *)
   | _, Unknown -> Ok (Left_input, env)
   | Unknown, _ -> Ok (Right_input, env)
   | Bottom, _ -> Bottom
