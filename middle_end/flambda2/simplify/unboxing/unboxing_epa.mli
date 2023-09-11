@@ -38,3 +38,6 @@ val add_extra_params_and_args :
   invalids:Apply_cont_rewrite_id.Set.t ->
   Unboxing_types.decision ->
   Continuation_extra_params_and_args.t
+
+val compute_extra_params_in_unspecified_order :
+  Bound_parameters.t -> Unboxing_types.decision -> Bound_parameters.t
