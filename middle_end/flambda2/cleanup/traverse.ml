@@ -217,7 +217,11 @@ end = struct
                   (Block (Apply (Normal i), Code_id_or_name.var v)))
               code_dep.return;
             Graph.add_dep t.deps !acc
-              (Block (Apply Exn, Code_id_or_name.var code_dep.exn))
+              (Block (Apply Exn, Code_id_or_name.var code_dep.exn));
+            (* Ugly hack: Calling the function indirectly (Normal -1) should also depend on the code ! *)
+            let dumm = Variable.create "dummy_clos_var_stuff" in
+            Graph.add_dep t.deps (Code_id_or_name.name name) (Block (Apply (Normal ~-1), (Code_id_or_name.var dumm)));
+            Graph.add_dep t.deps (Code_id_or_name.var dumm) (Block (Apply (Normal ~-2), (Code_id_or_name.code_id code_id)));
         in
         let code_id =
           try
