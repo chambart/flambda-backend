@@ -39,14 +39,6 @@ let empty () =
   in
   res
 
-(* Getters *)
-(* ******* *)
-
-let current_continuation (t : t) =
-  match t.stack with
-  | [] -> assert false
-  | { continuation; _ } :: _ -> continuation
-
 (* Updates *)
 (* ******* *)
 
