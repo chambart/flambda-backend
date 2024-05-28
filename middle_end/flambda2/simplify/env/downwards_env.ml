@@ -575,8 +575,11 @@ let add_continuation_defined_in_current_continuation t =
 
 let denv_for_lifted_continuation ~denv_for_join ~denv =
   (* At this point, we are lifting a continuation k' with handler [handlers],
-     out of a continuation k, and: - [denv_for_join] is the denv just before the
-     letk for k - [denv] is the denv just before the letk for k'
+     out of a continuation k, and:
+
+     - [denv_for_join] is the denv just before the let_cont for k
+
+     - [denv] is the denv just before the let_cont for k'
 
      And we need to decide which parts of denv to use to simplify the handlers
      of k' after there are lifted out from the handler of k. *)
