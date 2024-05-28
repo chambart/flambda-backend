@@ -610,12 +610,13 @@ let simplify_switch0 dacc switch ~down_to_up =
          parameters, which increase the work done by the typing env, as well as
          the flow analysis. We then only do the lifting if the cost is within
          the budget for the current function. *)
+      let budget = DA.get_continuation_lifting_budget dacc in
       let cost =
         DE.number_of_continuations_defined_in_current_continuation denv
         * Lifted_cont_params.length
             (DE.variables_defined_in_current_continuation denv)
       in
-      if DA.get_continuation_lifting_budget dacc < cost
+      if budget = 0 || budget < cost
       then dacc
       else
         (* TODO/FIXME: implement an actual criterion for when to lift

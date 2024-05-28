@@ -1081,6 +1081,8 @@ module Flambda_backend_options_impl = struct
   let no_flambda2_expert_shorten_symbol_names () =
     Flambda2.Expert.shorten_symbol_names := Flambda_backend_flags.Set false
   let flambda2_expert_cont_lifting_budget budget =
+    (* continuation lifting requires the advanced meet algorithm *)
+    if budget <> 0 then flambda2_advanced_meet ();
     Flambda2.Expert.cont_lifting_budget := Flambda_backend_flags.Set budget
   let flambda2_debug_concrete_types_only_on_canonicals =
     set' Flambda2.Debug.concrete_types_only_on_canonicals
