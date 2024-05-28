@@ -96,7 +96,7 @@ let create denv slot_offsets continuation_uses_env =
     debuginfo_rewrites = Simple.Map.empty;
     are_lifting_conts = Are_lifting_conts.no_lifting;
     lifted_continuations = [];
-    continuation_lifting_budget = 100 (* XXX fixme *)
+    continuation_lifting_budget = Flambda_features.Expert.cont_lifting_budget ()
   }
 
 let denv t = t.denv
