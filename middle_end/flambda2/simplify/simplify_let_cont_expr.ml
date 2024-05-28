@@ -101,19 +101,13 @@ type handlers_to_rebuild_group =
         is_single_inlinable_use : bool
       }
 
-type prepare_to_rebuild_handlers_lifted = { rebuild_body : expr_to_rebuild }
-
-type prepare_to_rebuild_handlers_rebuild =
+type prepare_to_rebuild_handlers_data =
   { rebuild_body : expr_to_rebuild;
     at_unit_toplevel : bool;
     handlers_from_the_outside_to_the_inside : handlers_to_rebuild_group list;
     original_invariant_params : Bound_parameters.t;
     invariant_extra_params : Bound_parameters.t
   }
-
-type prepare_to_rebuild_handlers_data =
-  | Lifted_out of prepare_to_rebuild_handlers_lifted
-  | Rebuild of prepare_to_rebuild_handlers_rebuild
 
 type rebuilt_handler =
   { handler : Rebuilt_expr.Continuation_handler.t;
@@ -897,46 +891,41 @@ let rec rebuild_continuation_handlers_loop ~rebuild_body
 
 let prepare_to_rebuild_handlers (data : prepare_to_rebuild_handlers_data) uacc
     ~after_rebuild =
-  match data with
-  | Lifted_out { rebuild_body } -> rebuild_body uacc ~after_rebuild
-  | Rebuild data ->
-    (* Here we just returned from the global [down_to_up], which is asking us to
-       rebuild the let cont. The flow analyses have been done, and we start to
-       rebuild the expressions. As with the downward pass, we loop over each
-       defined handler to rebuild it. As the handlers have been sorted by
-       strongly-connected components, we must process the handlers
-       group-by-group, and rebuild the groups from the outside to the inside.
-       For each of these groups, we need to perform different steps depending on
-       whether it is a mutually-recursive group or a single non-recursive
-       handler.
+  (* Here we just returned from the global [down_to_up], which is asking us to
+     rebuild the let cont. The flow analyses have been done, and we start to
+     rebuild the expressions. As with the downward pass, we loop over each
+     defined handler to rebuild it. As the handlers have been sorted by
+     strongly-connected components, we must process the handlers group-by-group,
+     and rebuild the groups from the outside to the inside. For each of these
+     groups, we need to perform different steps depending on whether it is a
+     mutually-recursive group or a single non-recursive handler.
 
-       For mutually-recursive groups, we need to add the rewrites to the
-       environment, and then rebuild the handlers, as the handlers might use
-       themselves, so the rewrites need to be ready at that point. We can only
-       use the dataflow information to compute which parameters are used and
-       which are not, since we won't be able to remove parameters after the
-       handlers have been rebuilt, since we can't rewrite them inside
-       themselves.
+     For mutually-recursive groups, we need to add the rewrites to the
+     environment, and then rebuild the handlers, as the handlers might use
+     themselves, so the rewrites need to be ready at that point. We can only use
+     the dataflow information to compute which parameters are used and which are
+     not, since we won't be able to remove parameters after the handlers have
+     been rebuilt, since we can't rewrite them inside themselves.
 
-       For a single non-recursive handler, we first rebuild the handler. This
-       allows us to get precise information on the parameters which are used,
-       which are then used to add the rewrites to the environment.
+     For a single non-recursive handler, we first rebuild the handler. This
+     allows us to get precise information on the parameters which are used,
+     which are then used to add the rewrites to the environment.
 
-       In both cases, we add the handlers to the environment after rebuilding
-       them, so that the environment is ready when rebuilding the remaining
-       handlers. We also reset the name occurrences and the cost metrics before
-       rebuilding each handler, so that we know the name occurrences and cost
-       metrics corresponding to each handler when rebuilding later. *)
-    let name_occurrences_of_subsequent_exprs = UA.name_occurrences uacc in
-    let cost_metrics_of_subsequent_exprs = UA.cost_metrics uacc in
-    let uenv_of_subsequent_exprs = UA.uenv uacc in
-    rebuild_continuation_handlers_loop ~rebuild_body:data.rebuild_body
-      ~at_unit_toplevel:data.at_unit_toplevel
-      ~original_invariant_params:data.original_invariant_params
-      ~invariant_extra_params:data.invariant_extra_params
-      ~name_occurrences_of_subsequent_exprs ~cost_metrics_of_subsequent_exprs
-      ~uenv_of_subsequent_exprs uacc ~after_rebuild
-      data.handlers_from_the_outside_to_the_inside []
+     In both cases, we add the handlers to the environment after rebuilding
+     them, so that the environment is ready when rebuilding the remaining
+     handlers. We also reset the name occurrences and the cost metrics before
+     rebuilding each handler, so that we know the name occurrences and cost
+     metrics corresponding to each handler when rebuilding later. *)
+  let name_occurrences_of_subsequent_exprs = UA.name_occurrences uacc in
+  let cost_metrics_of_subsequent_exprs = UA.cost_metrics uacc in
+  let uenv_of_subsequent_exprs = UA.uenv uacc in
+  rebuild_continuation_handlers_loop ~rebuild_body:data.rebuild_body
+    ~at_unit_toplevel:data.at_unit_toplevel
+    ~original_invariant_params:data.original_invariant_params
+    ~invariant_extra_params:data.invariant_extra_params
+    ~name_occurrences_of_subsequent_exprs ~cost_metrics_of_subsequent_exprs
+    ~uenv_of_subsequent_exprs uacc ~after_rebuild
+    data.handlers_from_the_outside_to_the_inside []
 
 let get_uses (data : after_downwards_traversal_of_body_and_handlers_data) cont =
   match CUE.get_continuation_uses data.cont_uses_env cont with
@@ -1092,14 +1081,13 @@ let rec after_downwards_traversal_of_body_and_handlers ~simplify_expr
   in
   let handlers_from_the_outside_to_the_inside = sort_handlers data handlers in
   let data : prepare_to_rebuild_handlers_data =
-    Rebuild
-      { rebuild_body = data.rebuild_body;
-        handlers_from_the_outside_to_the_inside;
-        at_unit_toplevel = data.at_unit_toplevel;
-        original_invariant_params = data.invariant_params;
-        invariant_extra_params =
-          EPA.extra_params data.invariant_extra_params_and_args
-      }
+    { rebuild_body = data.rebuild_body;
+      handlers_from_the_outside_to_the_inside;
+      at_unit_toplevel = data.at_unit_toplevel;
+      original_invariant_params = data.invariant_params;
+      invariant_extra_params =
+        EPA.extra_params data.invariant_extra_params_and_args
+    }
   in
   down_to_up dacc ~rebuild:(prepare_to_rebuild_handlers data)
 
@@ -1512,8 +1500,7 @@ and after_downwards_traversal_of_body ~simplify_expr ~down_to_up
     let dacc =
       DA.add_to_lifted_constant_accumulator dacc data.prior_lifted_constants
     in
-    let data : prepare_to_rebuild_handlers_data = Lifted_out { rebuild_body } in
-    down_to_up dacc ~rebuild:(prepare_to_rebuild_handlers data)
+    down_to_up dacc ~rebuild:rebuild_body
   | Not_lifting | Analyzing _ ->
     simplify_handlers ~simplify_expr data dacc ~rebuild_body (fun dacc data ->
         after_downwards_traversal_of_body_and_handlers ~simplify_expr
