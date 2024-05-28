@@ -33,14 +33,14 @@ type t =
     slot_offsets : Slot_offsets.t Code_id.Map.t;
     debuginfo_rewrites : Debuginfo.t Simple.Map.t;
     are_lifting_conts : Are_lifting_conts.t;
-    lifted_continuations : (DE.t * Lifted_cont.original_handlers) list;
+    lifted_continuations : (DE.t * Original_handlers.t) list;
     continuation_lifting_budget : int
   }
 
 let print_lifted_cont ppf (denv, original_handlers) =
   Format.fprintf ppf
     "@[<hov 1>(@[<hov 1>(denv %a)@]@ @[<hov 1>(original_handlers %a)@])@]"
-    DE.print denv Lifted_cont.print_original_handlers original_handlers
+    DE.print denv Original_handlers.print original_handlers
 
 let [@ocamlformat "disable"] print ppf
       { denv; continuation_uses_env; shareable_constants; used_value_slots;

@@ -46,13 +46,13 @@ open! Simplify_import
 
 type simplify_let_cont_data =
   { body : Expr.t;
-    handlers : Lifted_cont.original_handlers
+    handlers : Original_handlers.t
   }
 
 type after_downwards_traversal_of_body_data =
   { denv_for_join : DE.t;
     prior_lifted_constants : LCS.t;
-    handlers : Lifted_cont.original_handlers
+    handlers : Original_handlers.t
   }
 
 type expr_to_rebuild = (Rebuilt_expr.t * Upwards_acc.t) Simplify_common.rebuild
@@ -161,7 +161,7 @@ let split_non_recursive_let_cont handler =
     CH.pattern_match cont_handler ~f:(fun params ~handler -> params, handler)
   in
   ( body,
-    { Lifted_cont.cont;
+    { Non_recursive_handler.cont;
       params;
       handler;
       lifted_params = Lifted_cont_params.empty;
@@ -182,12 +182,12 @@ let split_recursive_let_cont handlers =
       (fun handler ->
         let is_cold = CH.is_cold handler in
         CH.pattern_match handler ~f:(fun params ~handler ->
-            { Lifted_cont.params; handler; is_cold }))
+            { One_recursive_handler.params; handler; is_cold }))
       handlers
   in
   body, invariant_params, continuation_handlers
 
-let split_let_cont let_cont : _ * Lifted_cont.original_handlers =
+let split_let_cont let_cont : _ * Original_handlers.t =
   match (let_cont : Let_cont.t) with
   | Non_recursive { handler; _ } ->
     let body, non_rec_handler = split_non_recursive_let_cont handler in
@@ -1216,7 +1216,7 @@ and simplify_handler ~simplify_expr ~is_recursive ~is_exn_handler ~lifted_params
 and simplify_single_recursive_handler ~simplify_expr cont_uses_env_so_far
     ~lifted_params ~invariant_params ~invariant_epa consts_lifted_during_body
     all_handlers_set denv_to_reset dacc cont
-    ({ params; handler; is_cold } : Lifted_cont.one_recursive_handler) k =
+    ({ params; handler; is_cold } : One_recursive_handler.t) k =
   (* Here we perform the downwards traversal on a single handler.
 
      We also make unboxing decisions at this step, which are necessary to
@@ -1505,7 +1505,7 @@ and after_downwards_traversal_of_body ~simplify_expr ~down_to_up
       DE.variables_defined_in_current_continuation (DA.denv dacc)
     in
     let handlers =
-      Lifted_cont.add_params_to_lift data.handlers params_to_lift
+      Original_handlers.add_params_to_lift data.handlers params_to_lift
     in
     let dacc = DA.add_lifted_continuation data.denv_for_join handlers dacc in
     (* Restore lifted constants in dacc *)
@@ -1595,7 +1595,7 @@ let simplify_as_recursive_let_cont ~simplify_expr dacc (body, handlers)
       (fun handler ->
         let is_cold = CH.is_cold handler in
         CH.pattern_match handler ~f:(fun params ~handler ->
-            { Lifted_cont.params; handler; is_cold }))
+            { One_recursive_handler.params; handler; is_cold }))
       handlers
   in
   let data : simplify_let_cont_data =
