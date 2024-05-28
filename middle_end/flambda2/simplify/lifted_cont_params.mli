@@ -73,22 +73,23 @@ val new_param : t -> Bound_parameter.t -> t
 (** Rename all new parameters, and returns the corresponding renaming. *)
 val rename : t -> t * Renaming.t
 
-(** Given a unique id, and a stack of the parent continuations lifted cont params,
-    this function lookups the first occurrence of a new param that maps to the
-    same unique id. *)
+(** Given a unique id, and a stack of the parent continuations lifted cont
+    params, this function lookups the first occurrence of a new param that maps
+    to the same unique id. *)
 val find_arg : Id.t -> t list -> Simple.t
 
-(** This function wraps the {find_arg} function to compute all adequate args for a given callsite.
-    This takes the lifted cont params of the continuation being called, as well as the stack of
-    the lifted param for all parent continuations at the callsite. *)
+(** This function wraps the {find_arg} function to compute all adequate args for
+    a given callsite.  This takes the lifted cont params of the continuation
+    being called, as well as the stack of the lifted param for all parent
+    continuations at the callsite. *)
 val args :
   callee_lifted_params:t -> caller_stack_lifted_params:t list -> Simple.t list
 
 (** Returns the bound parameters for a given set of new params.
-    The parameters returned by this function are in the same order as the arguments returned
-    by the {args} function. *)
+    The parameters returned by this function are in the same order as the
+    arguments returned by the {args} function. *)
 val bound_parameters : t -> Bound_parameters.t
 
-(** Fold over all of the new parameters. The order in which the parameters are iterated through
-    is **not** specified. *)
+(** Fold over all of the new parameters. The order in which the parameters are
+    iterated through is **not** specified. *)
 val fold : init:'a -> f:(Id.t -> Bound_parameter.t -> 'a -> 'a) -> t -> 'a
