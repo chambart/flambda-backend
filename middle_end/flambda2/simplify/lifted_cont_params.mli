@@ -16,7 +16,7 @@
 (** {1 New parameters for lifted continuations}
 
     While lifting continuations, new parameters have to be introduced to
-    replace variables that are in the lexical scope at the orginal location of
+    replace variables that are in the lexical scope at the original location of
     the continuation being lifted, but are not at its destination.
 
     The tricky part with these parameters is to compute the adequate new
@@ -73,14 +73,14 @@ val new_param : t -> Bound_parameter.t -> t
 (** Rename all new parameters, and returns the corresponding renaming. *)
 val rename : t -> t * Renaming.t
 
-(** Given a unique id, and a stack of the parent continuations lifted cont
-    params, this function lookups the first occurrence of a new param that maps
+(** Given a unique id, and a stack of the parent continuations' lifted cont
+    params, this function looks up the first occurrence of a new param that maps
     to the same unique id. *)
 val find_arg : Id.t -> t list -> Simple.t
 
 (** This function wraps the {find_arg} function to compute all adequate args for
     a given callsite.  This takes the lifted cont params of the continuation
-    being called, as well as the stack of the lifted param for all parent
+    being called, as well as the stack of the lifted params for all parent
     continuations at the callsite. *)
 val args :
   callee_lifted_params:t -> caller_stack_lifted_params:t list -> Simple.t list
