@@ -167,9 +167,9 @@ and code rec loopify(never) size(69) newer_version_of(map_foo_4)
                where k4 =
                  let `anon-fn[tests11.ml:15,2--70]` =
                    closure `anon-fn[tests11.ml:15,2--70]_1_2`
-                     @`anon-fn[tests11.ml:15,2--70]_1`
+                     @`anon-fn[tests11.ml:15,2--70]`
                  with {
-                   map_foo_1 =
+                   map_foo =
                      $camlTests11__map_foo_8 ~ depth my_depth -> succ my_depth
                  }
                  in
@@ -177,9 +177,9 @@ and code rec loopify(never) size(69) newer_version_of(map_foo_4)
                where k3 =
                  let `anon-fn[tests11.ml:15,2--70]` =
                    closure `anon-fn[tests11.ml:15,2--70]_1_3`
-                     @`anon-fn[tests11.ml:15,2--70]_1`
+                     @`anon-fn[tests11.ml:15,2--70]`
                  with {
-                   map_foo_1 =
+                   map_foo =
                      $camlTests11__map_foo_8 ~ depth my_depth -> succ my_depth
                  }
                  in

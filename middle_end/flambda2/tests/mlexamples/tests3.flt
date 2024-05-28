@@ -113,11 +113,11 @@ let code loopify(never) size(65) newer_version_of(foo_0)
       ((let cond_result = %is_flat_float_array arr in
         switch cond_result
           | 0 -> k5
-          | 1 -> k4_1)
+          | 1 -> k4)
          where k5 =
            let ifnot_result = %array_load mutable arr.(i) in
            cont k3 (ifnot_result)
-         where k4_1 =
+         where k4 =
            let prim = %array_load float mutable arr.(i) in
            let ifso_result = %Box_float prim in
            cont k3 (ifso_result)
@@ -126,12 +126,12 @@ let code loopify(never) size(65) newer_version_of(foo_0)
     where k2 (apply_result) =
       ((let cond_result = %is_flat_float_array arr in
         switch cond_result
-          | 0 -> k4
-          | 1 -> k3)
-         where k4 =
+          | 0 -> k3
+          | 1 -> k2)
+         where k3 =
            let ifnot_result = %array_set arr.(i) <- apply_result in
            cont k (0)
-         where k3 =
+         where k2 =
            let prim = %unbox_float apply_result in
            let ifso_result = %array_set float arr.(i) <- prim in
            cont k (0))
