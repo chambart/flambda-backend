@@ -44,38 +44,15 @@ open! Simplify_import
 (* For each stage, the information received by this stage is of type
    stage_data. *)
 
-type one_recursive_handler = Lifted_cont.one_recursive_handler =
-  { params : Bound_parameters.t;
-    handler : Expr.t;
-    is_cold : bool
-  }
-
-type non_recursive_handler = Lifted_cont.non_recursive_handler =
-  { cont : Continuation.t;
-    params : Bound_parameters.t;
-    lifted_params : Lifted_cont_params.t;
-    handler : Expr.t;
-    is_exn_handler : bool;
-    is_cold : bool
-  }
-
-type original_handlers = Lifted_cont.original_handlers =
-  | Recursive of
-      { invariant_params : Bound_parameters.t;
-        lifted_params : Lifted_cont_params.t;
-        continuation_handlers : one_recursive_handler Continuation.Map.t
-      }
-  | Non_recursive of non_recursive_handler
-
 type simplify_let_cont_data =
   { body : Expr.t;
-    handlers : original_handlers
+    handlers : Lifted_cont.original_handlers
   }
 
 type after_downwards_traversal_of_body_data =
   { denv_for_join : DE.t;
     prior_lifted_constants : LCS.t;
-    handlers : original_handlers
+    handlers : Lifted_cont.original_handlers
   }
 
 type expr_to_rebuild = (Rebuilt_expr.t * Upwards_acc.t) Simplify_common.rebuild
@@ -184,7 +161,7 @@ let split_non_recursive_let_cont handler =
     CH.pattern_match cont_handler ~f:(fun params ~handler -> params, handler)
   in
   ( body,
-    { cont;
+    { Lifted_cont.cont;
       params;
       handler;
       lifted_params = Lifted_cont_params.empty;
@@ -205,12 +182,12 @@ let split_recursive_let_cont handlers =
       (fun handler ->
         let is_cold = CH.is_cold handler in
         CH.pattern_match handler ~f:(fun params ~handler ->
-            { params; handler; is_cold }))
+            { Lifted_cont.params; handler; is_cold }))
       handlers
   in
   body, invariant_params, continuation_handlers
 
-let split_let_cont let_cont : _ * original_handlers =
+let split_let_cont let_cont : _ * Lifted_cont.original_handlers =
   match (let_cont : Let_cont.t) with
   | Non_recursive { handler; _ } ->
     let body, non_rec_handler = split_non_recursive_let_cont handler in
@@ -1242,7 +1219,7 @@ and simplify_handler ~simplify_expr ~is_recursive ~is_exn_handler ~lifted_params
 and simplify_single_recursive_handler ~simplify_expr cont_uses_env_so_far
     ~lifted_params ~invariant_params ~invariant_epa consts_lifted_during_body
     all_handlers_set denv_to_reset dacc cont
-    ({ params; handler; is_cold } : one_recursive_handler) k =
+    ({ params; handler; is_cold } : Lifted_cont.one_recursive_handler) k =
   (* Here we perform the downwards traversal on a single handler.
 
      We also make unboxing decisions at this step, which are necessary to
@@ -1607,7 +1584,7 @@ let simplify_as_recursive_let_cont ~simplify_expr dacc (body, handlers)
       (fun handler ->
         let is_cold = CH.is_cold handler in
         CH.pattern_match handler ~f:(fun params ~handler ->
-            { params; handler; is_cold }))
+            { Lifted_cont.params; handler; is_cold }))
       handlers
   in
   let data : simplify_let_cont_data =
