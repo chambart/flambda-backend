@@ -233,11 +233,6 @@ let split_let_cont let_cont : _ * original_handlers =
 
 let extend_lifted_continuation_uses lifted_cont_params callee_lifted_params uses
     =
-  (* if debug () then Format.eprintf "@\n~~~ EXTEND ~~~@\ncallee:
-     %a@\nlifted_cont_params: %a@\nuses: %a@\n@." Lifted_cont_params.print
-     callee_lifted_params (Continuation.Map.print Lifted_cont_params.print)
-     lifted_cont_params (Format.pp_print_list ~pp_sep:Format.pp_print_space
-     One_continuation_use.print) uses ; *)
   if Lifted_cont_params.is_empty callee_lifted_params
   then Bound_parameters.empty, uses
   else
@@ -1086,7 +1081,6 @@ let rec after_downwards_traversal_of_body_and_handlers ~simplify_expr
     down_to_up dacc ~rebuild:(prepare_to_rebuild_handlers data)
   | Rebuild data ->
     let dacc, down_to_up =
-      (* Format.eprintf "LIFTOUT %a@." DA.print dacc; *)
       let dacc, lifted_conts = DA.get_and_clear_lifted_continuations dacc in
       ( dacc,
         down_to_up_for_lifted_continuations ~simplify_expr ~denv_for_join
@@ -1412,9 +1406,6 @@ and simplify_handlers ~simplify_expr ~rebuild_body
         DA.with_are_lifting_conts dacc
           (Are_lifting_conts.think_about_lifting_out_of cont uses)
       in
-      (* let _uses = Continuation_uses.get_uses uses in Format.eprintf "USES =
-         %a@." (Format.pp_print_list (fun ff use -> One_continuation_use.print
-         ff use; DE.print ff (One_continuation_use.env_at_use use) ) ) _uses; *)
       let at_unit_toplevel =
         (* We try to show that [handler] postdominates [body] (which is done by
            showing that [body] can only return through [cont]) and that if
@@ -1438,9 +1429,6 @@ and simplify_handlers ~simplify_expr ~rebuild_body
           (Continuation_uses.get_uses uses)
           ~arg_types_by_use_id:(Continuation_uses.get_arg_types_by_use_id uses)
       in
-      (* Format.eprintf "Decisions for %a:@\n%a@\ndacc:@\n%a@\n@."
-         Continuation.print cont Unbox_continuation_params.Decisions.print
-         unbox_decisions TE.print (DE.typing_env (DA.denv dacc)); *)
       let all_extra_params =
         Bound_parameters.append
           (EPA.extra_params extra_params_and_args_for_cse)

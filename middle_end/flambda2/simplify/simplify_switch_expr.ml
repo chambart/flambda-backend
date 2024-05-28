@@ -615,8 +615,6 @@ let simplify_switch0 dacc switch ~down_to_up =
       if DA.get_continuation_lifting_budget dacc < cost
       then dacc
       else
-        (* Format.eprintf "Analyzing inside of continuation %a@."
-           Continuation.print continuation; *)
         (* TODO/FIXME: implement an actual criterion for when to lift
            continuations. Currently for testing, we lift any continuation that
            occurs in a handler that ends with a switch. *)
