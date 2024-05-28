@@ -1380,6 +1380,8 @@ module Extra_params = struct
        set Flambda2.Expert.can_inline_recursive_functions
     | "flambda2-expert-max-function-simplify-run" ->
        set_int Flambda2.Expert.max_function_simplify_run
+    | "flambda2-expert-cont-lifting-budget" ->
+       set_int Flambda2.Expert.cont_lifting_budget
     | "flambda2-inline-max-depth" ->
        Clflags.Int_arg_helper.parse v
          "Bad syntax in OCAMLPARAM for 'flambda2-inline-max-depth'"
