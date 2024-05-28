@@ -34,6 +34,7 @@ type t =
     debuginfo_rewrites : Debuginfo.t Simple.Map.t;
     are_lifting_conts : Are_lifting_conts.t;
     lifted_continuations : (DE.t * Original_handlers.t) list;
+    (* head of the list is the innermost continuation being lifted *)
     continuation_lifting_budget : int
   }
 
