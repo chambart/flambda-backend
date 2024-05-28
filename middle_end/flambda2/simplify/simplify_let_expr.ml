@@ -328,21 +328,21 @@ let simplify_let0 ~simplify_expr ~simplify_function_body dacc let_expr
     let dacc =
       DA.add_to_lifted_constant_accumulator dacc prior_lifted_constants
     in
-    let dacc =
-      DA.map_denv dacc ~f:(fun denv ->
-          List.fold_left
-            (fun denv (binding : Expr_builder.binding_to_place) ->
-              Bound_pattern.fold_all_bound_vars binding.let_bound ~init:denv
-                ~f:(fun denv bound_var ->
-                  let v = Bound_var.var bound_var in
-                  let kind =
-                    T.kind (TE.find (DE.typing_env denv) (Name.var v) None)
-                  in
-                  let bp = BP.create v (K.With_subkind.anything kind) in
-                  DE.add_variable_defined_in_current_continuation denv bp))
-            denv
-            (Simplify_named_result.bindings_to_place simplify_named_result))
+    let denv =
+      let tenv = DA.typing_env dacc in
+      List.fold_left
+        (fun denv (binding : Expr_builder.binding_to_place) ->
+          let kind =
+            Simplified_named.kind ~tenv binding.simplified_defining_expr
+          in
+          Bound_pattern.fold_all_bound_vars binding.let_bound ~init:denv
+            ~f:(fun denv bound_var ->
+              let bp = BP.create (Bound_var.var bound_var) kind in
+              DE.add_variable_defined_in_current_continuation denv bp))
+        (DA.denv dacc)
+        (Simplify_named_result.bindings_to_place simplify_named_result)
     in
+    let dacc = DA.with_denv dacc denv in
     let rewrite_id = Named_rewrite_id.create () in
     let dacc =
       DA.map_flow_acc dacc
