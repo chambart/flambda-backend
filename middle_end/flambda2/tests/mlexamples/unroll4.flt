@@ -117,43 +117,44 @@ let code inline(always) loopify(never) size(221) newer_version_of(parity_is_0)
   (let untagged = %untag_imm p in
    switch untagged
      | 0 -> k2
-     | 1 -> k3_2)
-    where k3_2 =
-      let prim = %phys_eq (n, 0) in
-      switch prim
-        | 0 -> k2_2
-        | 1 -> k3_1
-    where k3_1 =
-      apply inlined(hint) inlining_state(depth(10)) k (0) -> k * k1
-    where k2_2 =
-      let Psubint = n - 1 in
-      let prim = %phys_eq (Psubint, 0) in
-      switch prim
-        | 0 -> k2_1 (Psubint)
-        | 1 -> k3
+     | 1 -> k3)
     where k3 =
-      apply inlined(hint) inlining_state(depth(20)) k (1) -> k * k1
-    where k2_1 (Psubint) =
-      let Psubint_1 = Psubint in
-      let Psubint_2 = Psubint_1 - 1 in
-      let prim = %phys_eq (Psubint_2, 0) in
+      let prim = %phys_eq (n, 0) in
       (switch prim
          | 0 -> k2_1
          | 1 -> k3
          where k3 =
-           apply inlined(hint) inlining_state(depth(30)) k (0) -> k * k1
+           apply inlined(hint) inlining_state(depth(10)) k (0) -> k * k1
          where k2_1 =
-           let Psubint_3 = Psubint_2 - 1 in
-           let prim_1 = %phys_eq (Psubint_3, 0) in
+           let Psubint = n - 1 in
+           let prim_1 = %phys_eq (Psubint, 0) in
            (switch prim_1
               | 0 -> k2_1
               | 1 -> k3
               where k3 =
-                apply inlined(hint) inlining_state(depth(40)) k (1) -> k * k1
+                apply inlined(hint) inlining_state(depth(20)) k (1) -> k * k1
               where k2_1 =
-                let Psubint_4 = Psubint_3 - 1 in
-                apply direct(odd_2_1) inlining_state(depth(40))
-                  odd ~ depth 0 -> unroll 0 4 (Psubint_4) -> k * k1))
+                let Psubint_1 = Psubint - 1 in
+                let prim_2 = %phys_eq (Psubint_1, 0) in
+                (switch prim_2
+                   | 0 -> k2_1
+                   | 1 -> k3
+                   where k3 =
+                     apply inlined(hint) inlining_state(depth(30))
+                       k (0) -> k * k1
+                   where k2_1 =
+                     let Psubint_2 = Psubint_1 - 1 in
+                     let prim_3 = %phys_eq (Psubint_2, 0) in
+                     (switch prim_3
+                        | 0 -> k2_1
+                        | 1 -> k3
+                        where k3 =
+                          apply inlined(hint) inlining_state(depth(40))
+                            k (1) -> k * k1
+                        where k2_1 =
+                          let Psubint_3 = Psubint_2 - 1 in
+                          apply direct(odd_2_1) inlining_state(depth(40))
+                            odd ~ depth 0 -> unroll 0 4 (Psubint_3) -> k * k1))))
     where k2 =
       let prim = %phys_eq (n, 0) in
       (switch prim
