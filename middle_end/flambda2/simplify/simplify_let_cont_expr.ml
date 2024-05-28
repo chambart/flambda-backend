@@ -1354,8 +1354,6 @@ and simplify_handlers ~simplify_expr ~rebuild_body
         cont
     with
     | None ->
-      (* CR gbury: is this useful ? *)
-      (* let dacc = DA.with_are_lifting_conts dacc Are_lifting_conts.no_lifting in *)
       (* Continuation unused, no need to traverse its handler *)
       let data : after_downwards_traversal_of_body_and_handlers_data =
         { rebuild_body;
