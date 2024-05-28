@@ -1346,12 +1346,13 @@ and simplify_handlers ~simplify_expr ~rebuild_body
   match data.handlers with
   | Non_recursive
       { cont; params; lifted_params; handler; is_exn_handler; is_cold } -> (
-    let dacc = DA.with_are_lifting_conts dacc Are_lifting_conts.no_lifting in
     match
       Continuation_uses_env.get_continuation_uses body_continuation_uses_env
         cont
     with
     | None ->
+      (* CR gbury: is this useful ? *)
+      (* let dacc = DA.with_are_lifting_conts dacc Are_lifting_conts.no_lifting in *)
       (* Continuation unused, no need to traverse its handler *)
       let data : after_downwards_traversal_of_body_and_handlers_data =
         { rebuild_body;
