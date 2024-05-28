@@ -1437,6 +1437,19 @@ and simplify_handlers ~simplify_expr ~rebuild_body
           in
           k dacc data))
   | Recursive { continuation_handlers; invariant_params; lifted_params } ->
+    (* CR gbury: we currently do not lift any continuation out of a recursive
+     * continuation. For isntance it would be useful on the following example:
+     * let rec f = function
+     *   | A ->
+     *     do_something...
+     *     f B
+     *   | B ->
+     *     do_something
+     *     f A
+     * After loopify, we'll get a recursive continuation, and inlining/unrolling
+     * the continuation would be beneficial, and require lifting some continuations
+     * out of a recursive continuation. 
+     *)
     let dacc = DA.with_are_lifting_conts dacc Are_lifting_conts.no_lifting in
     let denv = DE.set_at_unit_toplevel_state denv false in
     let all_conts_set = Continuation.Map.keys continuation_handlers in
