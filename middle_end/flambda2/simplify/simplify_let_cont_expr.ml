@@ -342,11 +342,6 @@ type behaviour =
   | Alias_for of Continuation.t
   | Unknown
 
-let bound_parameters_equal b1 b2 =
-  List.equal Bound_parameter.equal
-    (Bound_parameters.to_list b1)
-    (Bound_parameters.to_list b2)
-
 let get_removed_aliased_params uacc cont =
   let param_aliases = UA.continuation_param_aliases uacc in
   let cont_params =
@@ -870,7 +865,7 @@ let rec rebuild_continuation_handlers_loop ~rebuild_body
               | None -> Some cont_invariant_params
               | Some invariant_params ->
                 if not
-                     (bound_parameters_equal invariant_params
+                     (Bound_parameters.equal invariant_params
                         cont_invariant_params)
                 then Misc.fatal_errorf "TODO good error message"
                 else Some invariant_params
