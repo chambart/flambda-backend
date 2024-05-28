@@ -50,6 +50,9 @@ type t =
     continuation_stack : Continuation.t list;
     variables_defined_in_current_continuation : Lifted_cont_params.t;
     number_of_continuations_defined_in_current_continuation : int
+        (* this last field makes it possible to count the number of parameters
+           added by the lifting process, and therefore estimate the cost of
+           lifting continuations. *)
   }
 
 let [@ocamlformat "disable"] print ppf { round; typing_env;
