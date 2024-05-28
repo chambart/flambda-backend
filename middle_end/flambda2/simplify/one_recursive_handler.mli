@@ -13,10 +13,13 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type t =
+type t = private
   { params : Bound_parameters.t;
     handler : Flambda.Expr.t;
     is_cold : bool
   }
+
+val create :
+  params:Bound_parameters.t -> handler:Flambda.Expr.t -> is_cold:bool -> t
 
 val print : Format.formatter -> t -> unit

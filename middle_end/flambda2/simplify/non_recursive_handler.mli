@@ -13,7 +13,7 @@
 (*                                                                        *)
 (**************************************************************************)
 
-type t =
+type t = private
   { cont : Continuation.t;
     params : Bound_parameters.t;
     lifted_params : Lifted_cont_params.t;
@@ -21,5 +21,14 @@ type t =
     is_exn_handler : bool;
     is_cold : bool
   }
+
+val create :
+  cont:Continuation.t ->
+  params:Bound_parameters.t ->
+  lifted_params:Lifted_cont_params.t ->
+  handler:Flambda.Expr.t ->
+  is_exn_handler:bool ->
+  is_cold:bool ->
+  t
 
 val print : Format.formatter -> t -> unit
