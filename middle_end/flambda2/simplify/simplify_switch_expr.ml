@@ -602,7 +602,11 @@ let simplify_switch0 dacc switch ~down_to_up =
   in
   let dacc =
     match DA.are_lifting_conts dacc with
-    | Lifting_out_of _ -> Misc.fatal_errorf "this should not happen"
+    | Lifting_out_of _ ->
+      Misc.fatal_errorf
+        "[Are_lifting_cont] value in the dacc cannot be [Lifting_out_of _] \
+         when going down on a switch expression. See the explanation in \
+         [are_lifting_conts.mli]."
     | Not_lifting -> dacc
     | Analyzing { continuation; uses = _ } ->
       let denv = DA.denv dacc in
