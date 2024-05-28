@@ -641,22 +641,24 @@ let denv_for_lifted_continuation ~denv_for_join ~denv =
 
      And we need to decide which parts of denv to use to simplify the handlers
      of k' after there are lifted out from the handler of k. *)
-  { typing_env = denv_for_join.typing_env;
+  { (* denv *)
     inlined_debuginfo = denv.inlined_debuginfo;
     can_inline = denv.can_inline;
     inlining_state = denv.inlining_state;
+    all_code = denv.all_code;
+    inlining_history_tracker = denv.inlining_history_tracker;
+    (* denv_for_join *)
+    typing_env = denv_for_join.typing_env;
     at_unit_toplevel = denv_for_join.at_unit_toplevel;
     variables_defined_at_toplevel = denv_for_join.variables_defined_at_toplevel;
     cse = denv_for_join.cse;
     comparison_results = denv_for_join.comparison_results;
-    all_code = denv.all_code;
-    inlining_history_tracker = denv.inlining_history_tracker;
     continuation_stack = denv_for_join.continuation_stack;
     variables_defined_in_current_continuation =
       denv_for_join.variables_defined_in_current_continuation;
     number_of_continuations_defined_in_current_continuation =
       denv_for_join.number_of_continuations_defined_in_current_continuation;
-    (* These should not matter, both denvs should have the same value of these
+    (* For the following fields, both denvs should have the same value of these
        fields *)
     round = denv.round;
     propagating_float_consts = denv.propagating_float_consts;
