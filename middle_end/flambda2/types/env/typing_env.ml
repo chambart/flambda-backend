@@ -154,12 +154,10 @@ let [@ocamlformat "disable"] print ppf
     let levels =
       current_level :: prev_levels
     in
-    (*
     let levels =
       List.filter (fun level -> not (One_level.is_empty level))
         levels
     in
-    *)
     Format.fprintf ppf
       "@[<hov 1>(\
          @[<hov 1>(defined_symbols@ %a)@]@ \
