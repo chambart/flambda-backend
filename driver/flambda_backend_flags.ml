@@ -124,7 +124,7 @@ module Flambda2 = struct
     let cse_depth = 2
     let join_depth = 5
     let function_result_types = Never
-    let meet_algorithm = Advanced
+    let meet_algorithm = Basic
     let unicode = true
   end
 
@@ -204,7 +204,7 @@ module Flambda2 = struct
       let can_inline_recursive_functions = false
       let max_function_simplify_run = 2
       let shorten_symbol_names = false
-      let cont_lifting_budget = 200
+      let cont_lifting_budget = 0
     end
 
     type flags = {
