@@ -36,6 +36,12 @@ let print ppf t =
 
 let add_params_to_lift t params_to_lift =
   let lifted_params, renaming = Lifted_cont_params.rename params_to_lift in
+  let[@inline] fail () =
+    Misc.fatal_errorf
+      "Cannot add lifted params to a continuation that already has lifted \
+       params:@ params_to_lift=%a@ t=%a"
+      Lifted_cont_params.print params_to_lift print t
+  in
   match t with
   | Recursive
       ({ lifted_params = old_lifted; continuation_handlers; _ } as recursive) ->
@@ -51,16 +57,10 @@ let add_params_to_lift t params_to_lift =
           continuation_handlers
       in
       Recursive { recursive with lifted_params; continuation_handlers }
-    else
-      Misc.fatal_errorf
-        "Cannot add lifted params to a continuation that already has lifted \
-         params"
+    else fail ()
   | Non_recursive ({ lifted_params = old_lifted; handler; _ } as non_rec) ->
     if Lifted_cont_params.is_empty old_lifted
     then
       let handler = Flambda.Expr.apply_renaming handler renaming in
       Non_recursive { non_rec with lifted_params; handler }
-    else
-      Misc.fatal_errorf
-        "Cannot add lifted params to a continuation that already has lifted \
-         params"
+    else fail ()
