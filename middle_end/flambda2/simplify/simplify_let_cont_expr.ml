@@ -865,7 +865,12 @@ let rec rebuild_continuation_handlers_loop ~rebuild_body
                 if not
                      (Bound_parameters.equal invariant_params
                         cont_invariant_params)
-                then Misc.fatal_errorf "TODO good error message"
+                then
+                  Misc.fatal_errorf
+                    "Inconsistent invariant params: invariant_params=%a@ \
+                     cont_invariant_params=%a"
+                    Bound_parameters.print invariant_params
+                    Bound_parameters.print cont_invariant_params
                 else Some invariant_params
             in
             loop uacc invariant_params remaining_handlers
