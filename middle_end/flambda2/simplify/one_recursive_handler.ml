@@ -19,6 +19,8 @@ type t =
     is_cold : bool
   }
 
+let create ~params ~handler ~is_cold = { params; handler; is_cold }
+
 let print ppf { params; handler; is_cold } =
   Format.fprintf ppf
     "@[<hov 1>(@[<hv 1>(params@ %a)@]@ @[<hv 1>(is_cold@ %b)@]@ @[<hv \

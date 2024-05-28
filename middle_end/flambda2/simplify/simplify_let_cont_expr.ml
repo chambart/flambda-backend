@@ -161,13 +161,8 @@ let split_non_recursive_let_cont handler =
     CH.pattern_match cont_handler ~f:(fun params ~handler -> params, handler)
   in
   ( body,
-    { Non_recursive_handler.cont;
-      params;
-      handler;
-      lifted_params = Lifted_cont_params.empty;
-      is_exn_handler;
-      is_cold
-    } )
+    Non_recursive_handler.create ~cont ~params ~handler
+      ~lifted_params:Lifted_cont_params.empty ~is_exn_handler ~is_cold )
 
 let split_recursive_let_cont handlers =
   let invariant_params, body, rec_handlers =
@@ -182,7 +177,7 @@ let split_recursive_let_cont handlers =
       (fun handler ->
         let is_cold = CH.is_cold handler in
         CH.pattern_match handler ~f:(fun params ~handler ->
-            { One_recursive_handler.params; handler; is_cold }))
+            One_recursive_handler.create ~params ~handler ~is_cold))
       handlers
   in
   body, invariant_params, continuation_handlers
@@ -191,13 +186,20 @@ let split_let_cont let_cont : _ * Original_handlers.t =
   match (let_cont : Let_cont.t) with
   | Non_recursive { handler; _ } ->
     let body, non_rec_handler = split_non_recursive_let_cont handler in
-    body, Non_recursive non_rec_handler
+    let original_handlers =
+      Original_handlers.create_non_recursive non_rec_handler
+    in
+    body, original_handlers
   | Recursive handlers ->
     let lifted_params = Lifted_cont_params.empty in
     let body, invariant_params, continuation_handlers =
       split_recursive_let_cont handlers
     in
-    body, Recursive { invariant_params; lifted_params; continuation_handlers }
+    let original_handlers =
+      Original_handlers.create_recursive ~invariant_params ~lifted_params
+        ~continuation_handlers
+    in
+    body, original_handlers
 
 (* Helpers for extra parameters of lifted continuations *)
 
@@ -1450,7 +1452,7 @@ and simplify_handlers ~simplify_expr ~rebuild_body
      *     f A
      * After loopify, we'll get a recursive continuation, and inlining/unrolling
      * the continuation would be beneficial, and require lifting some continuations
-     * out of a recursive continuation. 
+     * out of a recursive continuation.
      *)
     let dacc = DA.with_are_lifting_conts dacc Are_lifting_conts.no_lifting in
     let denv = DE.set_at_unit_toplevel_state denv false in
@@ -1596,17 +1598,15 @@ let simplify_as_recursive_let_cont ~simplify_expr dacc (body, handlers)
       (fun handler ->
         let is_cold = CH.is_cold handler in
         CH.pattern_match handler ~f:(fun params ~handler ->
-            { One_recursive_handler.params; handler; is_cold }))
+            One_recursive_handler.create ~params ~handler ~is_cold))
       handlers
   in
   let data : simplify_let_cont_data =
     { body;
       handlers =
-        Recursive
-          { invariant_params = Bound_parameters.empty;
-            lifted_params = Lifted_cont_params.empty;
-            continuation_handlers
-          }
+        Original_handlers.create_recursive
+          ~invariant_params:Bound_parameters.empty
+          ~lifted_params:Lifted_cont_params.empty ~continuation_handlers
     }
   in
   simplify_let_cont0 ~simplify_expr dacc data ~down_to_up

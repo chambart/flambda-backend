@@ -22,6 +22,9 @@ type t =
     is_cold : bool
   }
 
+let create ~cont ~params ~lifted_params ~handler ~is_exn_handler ~is_cold =
+  { cont; params; lifted_params; handler; is_exn_handler; is_cold }
+
 let print ppf { cont; params; lifted_params; handler; is_exn_handler; is_cold }
     =
   Format.fprintf ppf
