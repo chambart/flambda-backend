@@ -13,7 +13,6 @@
 (*                                                                        *)
 (**************************************************************************)
 
-(* This is mainly to have indexable unique ids *)
 module Id : sig
   type t
 
