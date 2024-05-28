@@ -1101,9 +1101,13 @@ and prepare_dacc_for_handlers dacc ~env_at_fork ~params ~is_recursive
      prepare a common dacc for all handlers. *)
   let join_result =
     (* We add to the continuation uses (and therefore to the handler env) the
-       params added by the eventual lifting of continuations. However, we do not
-       want those lifted params to be unboxed: it should not be beneficial
-       (since the lifted params should already include unbxoed versions). *)
+       params added by the eventual lifting of continuations. *)
+    (* CR gbury: Some of those params need not be unboxed (the ones that come
+       from continuation original parameters), but others may benefit from being
+       unboxed, for example variables that are let-bound in a continuations's
+       handler. We sould look into whether it's actually useful, and try
+       enabling unboxing for thos (while avoiding re-unboxing parameters that
+       have already been unboxed). *)
     let lifted_params, uses =
       extend_lifted_continuation_uses
         (DA.cont_lifting_params dacc)
