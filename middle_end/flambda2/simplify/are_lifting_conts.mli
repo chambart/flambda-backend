@@ -34,7 +34,8 @@
 
     - it is set to [No_lifting] at top-level (because continuations cannot be
       lifted above the top-level)
-    - it is set to [Analyzing] when going down on the handler of a continuation.
+    - it is set to [Analyzing] when going downwards through the handler of a
+      continuation.
     - when we make the choice of whether to lift or not[1], if we do decide
       to lift, we set it to [Lifting_out_of].
 
