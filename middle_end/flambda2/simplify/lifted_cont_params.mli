@@ -49,7 +49,7 @@ module Id : sig
 end
 
 (** This type represents all of the new params for one lifted continuation.
-    These addeed parameters are indexed by the {Id.t} type: when an individual
+    These added parameters are indexed by the {Id.t} type: when an individual
     new param is first created/added to a value of type [t], it is given a fresh
     identifier.
 *)
