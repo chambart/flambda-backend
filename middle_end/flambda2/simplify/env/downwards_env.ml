@@ -50,8 +50,6 @@ type t =
     continuation_stack : Continuation.t list;
     variables_defined_in_current_continuation : Lifted_cont_params.t;
     number_of_continuations_defined_in_current_continuation : int
-        (* CR gbury: maybe rename Lifted_cont_params -> Indexed_bound_parameters
-           ? *)
   }
 
 let [@ocamlformat "disable"] print ppf { round; typing_env;
