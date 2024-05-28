@@ -1365,7 +1365,13 @@ module Extra_params = struct
     | "flambda2-expert-max-function-simplify-run" ->
        set_int Flambda2.Expert.max_function_simplify_run
     | "flambda2-expert-cont-lifting-budget" ->
-       set_int Flambda2.Expert.cont_lifting_budget
+      begin match Compenv.check_int ppf name v with
+      | Some i ->
+         if i <> 0 then Flambda2.meet_algorithm := Flambda_backend_flags.(Set Advanced);
+         Flambda2.Expert.cont_lifting_budget := Flambda_backend_flags.Set i
+      | None -> ()
+      end;
+      true
     | "flambda2-inline-max-depth" ->
        Clflags.Int_arg_helper.parse v
          "Bad syntax in OCAMLPARAM for 'flambda2-inline-max-depth'"
