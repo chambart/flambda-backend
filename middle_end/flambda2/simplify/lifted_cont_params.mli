@@ -37,16 +37,7 @@
     unique ids (which are in fact integers).
 *)
 
-module Id : sig
-  (** Identifiers for new parameters for lifted continuations. *)
-  type t
-
-  (** Printing function *)
-  val print : Format.formatter -> t -> unit
-
-  (** Maps *)
-  module Map : Container_types.Map with type key = t
-end
+type id
 
 (** This type represents all of the new params for one lifted continuation.
     These added parameters are indexed by the {Id.t} type: when an individual
@@ -76,7 +67,7 @@ val rename : t -> t * Renaming.t
 (** Given a unique id, and a stack of the parent continuations' lifted cont
     params, this function looks up the first occurrence of a new param that maps
     to the same unique id. *)
-val find_arg : Id.t -> t list -> Simple.t
+val find_arg : id -> t list -> Simple.t
 
 (** This function wraps the {find_arg} function to compute all adequate args for
     a given callsite.  This takes the lifted cont params of the continuation
@@ -92,4 +83,4 @@ val bound_parameters : t -> Bound_parameters.t
 
 (** Fold over all of the new parameters. The order in which the parameters are
     iterated through is **not** specified. *)
-val fold : init:'a -> f:(Id.t -> Bound_parameter.t -> 'a -> 'a) -> t -> 'a
+val fold : init:'a -> f:(id -> Bound_parameter.t -> 'a -> 'a) -> t -> 'a

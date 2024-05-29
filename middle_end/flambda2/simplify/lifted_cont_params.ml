@@ -13,85 +13,51 @@
 (*                                                                        *)
 (**************************************************************************)
 
-module Id : sig
-  type t
+type id = int
 
-  val fresh : unit -> t
-
-  val print : Format.formatter -> t -> unit
-
-  module Map : Container_types.Map with type key = t
-end = struct
-  type t = int
-
-  let print = Numbers.Int.print
-
-  let fresh =
-    let r = ref 0 in
-    fun () ->
-      incr r;
-      !r
-
-  module Tree = Patricia_tree.Make (struct
-    let print = print
-  end)
-
-  module Map = Tree.Map
-end
-
-type t = { new_params_indexed : Bound_parameter.t Id.Map.t }
+type t = { new_params_indexed : Bound_parameter.t list } [@@unboxed]
 
 let print ppf { new_params_indexed } =
   Format.fprintf ppf "@[<hov 1>(@[<hov 1>(new_params_indexed@ %a)@])@]"
-    (Id.Map.print Bound_parameter.print)
+    (Format.pp_print_list ~pp_sep:(fun ppf () -> Format.fprintf ppf "@ ") Bound_parameter.print)
     new_params_indexed
 
-let empty = { new_params_indexed = Id.Map.empty }
+let empty = { new_params_indexed = [] }
 
-let is_empty { new_params_indexed } = Id.Map.is_empty new_params_indexed
+let is_empty { new_params_indexed } =
+  match new_params_indexed with
+  | [] -> true
+  | _ :: _ -> false
 
-let length { new_params_indexed } = Id.Map.cardinal new_params_indexed
+let length { new_params_indexed } = List.length new_params_indexed
 
 let new_param t bound_param =
-  (* create a fresh var/bound_param to index the new parameter *)
-  let id = Id.fresh () in
-  let new_params_indexed = Id.Map.add id bound_param t.new_params_indexed in
-  { (* t with *) new_params_indexed }
+  let new_params_indexed = bound_param :: t.new_params_indexed in
+  { new_params_indexed }
 
 let rename t =
-  let bindings = Id.Map.bindings t.new_params_indexed in
-  let keys, bound_param_list = List.split bindings in
+  let bindings = t.new_params_indexed in
+  let bound_param_list = bindings in
   let bound_params = Bound_parameters.create bound_param_list in
   let new_bound_params = Bound_parameters.rename bound_params in
   let renaming =
     Bound_parameters.renaming bound_params ~guaranteed_fresh:new_bound_params
   in
   let new_params_indexed =
-    Id.Map.of_list
-      (List.combine keys (Bound_parameters.to_list new_bound_params))
+    (Bound_parameters.to_list new_bound_params)
   in
-  { (* t with *) new_params_indexed }, renaming
+  { new_params_indexed }, renaming
 
-let fold ~init ~f { new_params_indexed } = Id.Map.fold f new_params_indexed init
+let fold ~init ~f { new_params_indexed } =
+  let _, acc = List.fold_left (fun (i,acc) v -> i+1, f i v acc) (0,init) new_params_indexed in
+  acc
 
-let rec find_arg id = function
-  | [] ->
-    Misc.fatal_errorf
-      "Missing lifted param id: %a not found in lifted_cont_params stack"
-      Id.print id
-  | { new_params_indexed } :: r -> (
-    match Id.Map.find_opt id new_params_indexed with
-    | Some param -> Bound_parameter.simple param
-    | None -> find_arg id r)
+let find_arg n l =
+  let find { new_params_indexed } =
+    List.nth_opt new_params_indexed n
+  in
+  Bound_parameter.simple (Option.get (List.find_map find l))
 
-(* NOTE about the order of the returned args/params for the {args} and
-   {bound_parameters} functions: The exact order does not matter as long as both
-   functions return params (or their corresponding arguments) **in the same
-   order**.
-
-   The current implementations return the parameters/arguments in the reverse
-   order of the bindings in the Map, but that's fine since it is the case for
-   both functions. *)
 let args ~callee_lifted_params ~caller_stack_lifted_params =
   fold callee_lifted_params ~init:[] ~f:(fun id _callee_param acc ->
       find_arg id caller_stack_lifted_params :: acc)
