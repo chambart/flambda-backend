@@ -39,7 +39,6 @@ val create :
   unit_toplevel_exn_continuation:Continuation.t ->
   unit_toplevel_return_continuation:Continuation.t ->
   toplevel_my_region:Variable.t ->
-  dummy_toplevel_cont:Continuation.t ->
   t
 
 val all_code : t -> Code.t Code_id.Map.t

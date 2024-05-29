@@ -124,7 +124,7 @@ let create ~round ~(resolver : resolver)
     ~(get_imported_names : get_imported_names)
     ~(get_imported_code : get_imported_code) ~propagating_float_consts
     ~unit_toplevel_exn_continuation ~unit_toplevel_return_continuation
-    ~toplevel_my_region ~dummy_toplevel_cont =
+    ~toplevel_my_region =
   let typing_env = TE.create ~resolver ~get_imported_names in
   let t =
     { round;
@@ -146,7 +146,7 @@ let create ~round ~(resolver : resolver)
       inlining_history_tracker =
         Inlining_history.Tracker.empty (Compilation_unit.get_current_exn ());
       loopify_state = Loopify_state.do_not_loopify;
-      continuation_stack = [dummy_toplevel_cont];
+      continuation_stack = [];
       variables_defined_in_current_continuation = Lifted_cont_params.empty;
       number_of_continuations_defined_in_current_continuation = 0
     }
