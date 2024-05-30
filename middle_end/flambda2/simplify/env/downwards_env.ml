@@ -254,8 +254,7 @@ let add_name t name ty =
   let t = define_name t name (T.kind ty) in
   { t with typing_env = TE.add_equation t.typing_env (Bound_name.name name) ty }
 
-let add_variable t var ty =
-  add_name t (Bound_name.create_var var) ty
+let add_variable t var ty = add_name t (Bound_name.create_var var) ty
 
 let add_equation_on_variable t var ty =
   let typing_env = TE.add_equation t.typing_env (Name.var var) ty in
@@ -313,8 +312,7 @@ let define_parameters t ~params =
     t
     (Bound_parameters.to_list params)
 
-let add_parameters ?(name_mode = Name_mode.normal) t params
-    ~param_types =
+let add_parameters ?(name_mode = Name_mode.normal) t params ~param_types =
   let params' = params in
   let params = Bound_parameters.to_list params in
   if List.compare_lengths params param_types <> 0
@@ -330,8 +328,7 @@ let add_parameters ?(name_mode = Name_mode.normal) t params
       add_variable t var param_type)
     t params param_types
 
-let add_parameters_with_unknown_types ?alloc_modes ?name_mode
-    t params =
+let add_parameters_with_unknown_types ?alloc_modes ?name_mode t params =
   let params' = params in
   let params = Bound_parameters.to_list params in
   let alloc_modes =
