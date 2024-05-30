@@ -243,34 +243,17 @@ let enter_set_of_closures
     number_of_continuations_defined_in_current_continuation = 0
   }
 
-let add_name t name ty =
+let define_name t name kind =
   Name.pattern_match (Bound_name.name name)
     ~var:(fun var ->
-      define_variable t
-        (Bound_var.create var (Bound_name.name_mode name))
-        (T.kind ty))
-    ~symbol:(fun _ ->
-      { t with
-        typing_env =
-          TE.add_equation
-            (TE.add_definition t.typing_env name (T.kind ty))
-            (Bound_name.name name) ty
-      })
+        define_variable t
+          (Bound_var.create var (Bound_name.name_mode name))
+          kind)
+    ~symbol:(fun _ -> t)
 
-let add_variable0 t var ty ~at_unit_toplevel =
-  let typing_env =
-    let var' = Bound_name.create_var var in
-    TE.add_equation
-      (TE.add_definition t.typing_env var' (T.kind ty))
-      (Name.var (Bound_var.var var))
-      ty
-  in
-  let variables_defined_at_toplevel =
-    if at_unit_toplevel
-    then Variable.Set.add (Bound_var.var var) t.variables_defined_at_toplevel
-    else t.variables_defined_at_toplevel
-  in
-  { t with typing_env; variables_defined_at_toplevel }
+let add_name t name ty =
+  let t = define_name t name (T.kind ty) in
+  { t with typing_env = TE.add_equation t.typing_env (Bound_name.name name) ty }
 
 let add_variable t var ty =
   add_name t (Bound_name.create_var var) ty
@@ -314,18 +297,6 @@ let add_symbol_projection t var proj =
 
 let find_symbol_projection t var = TE.find_symbol_projection t.typing_env var
 
-let define_name t name kind =
-  let typing_env = TE.add_definition t.typing_env name kind in
-  let variables_defined_at_toplevel =
-    Name.pattern_match (Bound_name.name name)
-      ~var:(fun var ->
-        if t.at_unit_toplevel
-        then Variable.Set.add var t.variables_defined_at_toplevel
-        else t.variables_defined_at_toplevel)
-      ~symbol:(fun _ -> t.variables_defined_at_toplevel)
-  in
-  { t with typing_env; variables_defined_at_toplevel }
-
 let define_name_if_undefined t name kind =
   if TE.mem t.typing_env (Bound_name.name name)
   then t
@@ -354,11 +325,10 @@ let add_parameters ?(name_mode = Name_mode.normal) t params
       Bound_parameters.print params'
       (Format.pp_print_list ~pp_sep:Format.pp_print_space T.print)
       param_types;
-  let at_unit_toplevel = t.at_unit_toplevel in
   List.fold_left2
     (fun t param param_type ->
       let var = Bound_var.create (BP.var param) name_mode in
-      add_variable0 t var param_type ~at_unit_toplevel)
+      add_variable t var param_type)
     t params param_types
 
 let add_parameters_with_unknown_types ?alloc_modes ?name_mode
