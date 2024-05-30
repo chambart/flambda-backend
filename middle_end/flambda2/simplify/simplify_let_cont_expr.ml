@@ -1218,7 +1218,8 @@ and simplify_single_recursive_handler ~simplify_expr cont_uses_env_so_far
      the unboxing extra_params_and_args to later, when we will have seen all
      uses (needed for the recursive continuation handlers). *)
   let handler_env =
-    DE.add_parameters_with_unknown_types ~at_unit_toplevel:false denv_to_reset
+    assert(not (DE.at_unit_toplevel denv_to_reset));
+    DE.add_parameters_with_unknown_types denv_to_reset
       params
   in
   let handler_env = LCS.add_to_denv handler_env consts_lifted_during_body in

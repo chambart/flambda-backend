@@ -273,7 +273,7 @@ let add_variable0 t var ty ~at_unit_toplevel =
   { t with typing_env; variables_defined_at_toplevel }
 
 let add_variable t var ty =
-  add_variable0 t var ty ~at_unit_toplevel:t.at_unit_toplevel
+  add_name t (Bound_name.create_var var) ty
 
 let add_equation_on_variable t var ty =
   let typing_env = TE.add_equation t.typing_env (Name.var var) ty in
@@ -343,7 +343,7 @@ let define_parameters t ~params =
     t
     (Bound_parameters.to_list params)
 
-let add_parameters ?(name_mode = Name_mode.normal) ?at_unit_toplevel t params
+let add_parameters ?(name_mode = Name_mode.normal) t params
     ~param_types =
   let params' = params in
   let params = Bound_parameters.to_list params in
@@ -354,16 +354,14 @@ let add_parameters ?(name_mode = Name_mode.normal) ?at_unit_toplevel t params
       Bound_parameters.print params'
       (Format.pp_print_list ~pp_sep:Format.pp_print_space T.print)
       param_types;
-  let at_unit_toplevel =
-    Option.value at_unit_toplevel ~default:t.at_unit_toplevel
-  in
+  let at_unit_toplevel = t.at_unit_toplevel in
   List.fold_left2
     (fun t param param_type ->
       let var = Bound_var.create (BP.var param) name_mode in
       add_variable0 t var param_type ~at_unit_toplevel)
     t params param_types
 
-let add_parameters_with_unknown_types ?alloc_modes ?name_mode ?at_unit_toplevel
+let add_parameters_with_unknown_types ?alloc_modes ?name_mode
     t params =
   let params' = params in
   let params = Bound_parameters.to_list params in
@@ -381,7 +379,7 @@ let add_parameters_with_unknown_types ?alloc_modes ?name_mode ?at_unit_toplevel
     ListLabels.map2 params alloc_modes ~f:(fun param alloc_mode ->
         T.unknown_with_subkind ~alloc_mode (BP.kind param))
   in
-  add_parameters ?name_mode ?at_unit_toplevel t params' ~param_types
+  add_parameters ?name_mode t params' ~param_types
 
 let mark_parameters_as_toplevel t params =
   let variables_defined_at_toplevel =
