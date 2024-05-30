@@ -126,12 +126,7 @@ let create ~round ~(resolver : resolver)
     ~unit_toplevel_exn_continuation ~unit_toplevel_return_continuation
     ~toplevel_my_region ~dummy_toplevel_cont =
   let typing_env = TE.create ~resolver ~get_imported_names in
-  let typing_env =
-    TE.add_definition typing_env
-      (Bound_name.create (Name.var toplevel_my_region) Name_mode.normal)
-      K.region
-  in
-  { round;
+  let t = { round;
     typing_env;
     inlined_debuginfo = Inlined_debuginfo.none;
     can_inline = true;
@@ -152,8 +147,10 @@ let create ~round ~(resolver : resolver)
     loopify_state = Loopify_state.do_not_loopify;
     continuation_stack = [dummy_toplevel_cont];
     variables_defined_in_current_continuation = Lifted_cont_params.empty;
-    number_of_continuations_defined_in_current_continuation = 0
-  }
+    number_of_continuations_defined_in_current_continuation = 0;
+    some_variables = Variable.Set.empty
+    } in
+  define_variable t (Bound_var.create toplevel_my_region Name_mode.normal) K.region
 
 let continuation_stack t = t.continuation_stack
 
