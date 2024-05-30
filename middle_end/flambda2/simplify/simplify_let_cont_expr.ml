@@ -1189,6 +1189,21 @@ and simplify_handler ~simplify_expr ~is_recursive ~is_exn_handler ~lifted_params
           (Bound_parameters.to_list
              (Bound_parameters.append all_params all_extra_params)))
   in
+  let () =
+    let some_variables = DE.some_variables (DA.denv dacc) in
+    let all_bp = (Bound_parameters.var_set
+                    (Bound_parameters.append all_params all_extra_params)) in
+    let diff = Variable.Set.diff all_bp some_variables in
+    if not (Variable.Set.is_empty diff) then begin
+      Format.eprintf "Missing:@.%a@.@." Variable.Set.print diff;
+      assert false
+    end;
+    let diff' = Variable.Set.diff all_bp some_variables in
+    if not (Variable.Set.is_empty diff') then begin
+      Format.eprintf "In excess:@.%a@.@." Variable.Set.print diff';
+      assert false
+    end
+  in
   let dacc = DA.with_continuation_uses_env dacc ~cont_uses_env:CUE.empty in
   let dacc =
     DA.map_flow_acc
