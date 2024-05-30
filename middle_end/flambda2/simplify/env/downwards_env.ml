@@ -108,6 +108,18 @@ let [@ocamlformat "disable"] print ppf { round; typing_env;
     Lifted_cont_params.print variables_defined_in_current_continuation
     number_of_continuations_defined_in_current_continuation
 
+let define_variable t var kind =
+  let typing_env =
+    let var = Bound_name.create_var var in
+    TE.add_definition t.typing_env var kind
+  in
+  let variables_defined_at_toplevel =
+    if t.at_unit_toplevel
+    then Variable.Set.add (Bound_var.var var) t.variables_defined_at_toplevel
+    else t.variables_defined_at_toplevel
+  in
+  { t with typing_env; variables_defined_at_toplevel }
+
 let create ~round ~(resolver : resolver)
     ~(get_imported_names : get_imported_names)
     ~(get_imported_code : get_imported_code) ~propagating_float_consts
@@ -233,18 +245,6 @@ let enter_set_of_closures
     variables_defined_in_current_continuation = Lifted_cont_params.empty;
     number_of_continuations_defined_in_current_continuation = 0
   }
-
-let define_variable t var kind =
-  let typing_env =
-    let var = Bound_name.create_var var in
-    TE.add_definition t.typing_env var kind
-  in
-  let variables_defined_at_toplevel =
-    if t.at_unit_toplevel
-    then Variable.Set.add (Bound_var.var var) t.variables_defined_at_toplevel
-    else t.variables_defined_at_toplevel
-  in
-  { t with typing_env; variables_defined_at_toplevel }
 
 let add_name t name ty =
   let typing_env =
