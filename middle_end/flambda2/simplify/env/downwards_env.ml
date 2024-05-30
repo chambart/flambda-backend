@@ -49,10 +49,11 @@ type t =
     loopify_state : Loopify_state.t;
     continuation_stack : Continuation.t list;
     variables_defined_in_current_continuation : Lifted_cont_params.t;
-    number_of_continuations_defined_in_current_continuation : int
+    number_of_continuations_defined_in_current_continuation : int;
         (* this last field makes it possible to count the number of parameters
            added by the lifting process, and therefore estimate the cost of
            lifting continuations. *)
+    some_variables : Variable.Set.t
   }
 
 let [@ocamlformat "disable"] print ppf { round; typing_env;
@@ -66,6 +67,7 @@ let [@ocamlformat "disable"] print ppf { round; typing_env;
                 loopify_state; continuation_stack;
                 variables_defined_in_current_continuation;
                 number_of_continuations_defined_in_current_continuation;
+                some_variables = _;
               } =
   Format.fprintf ppf "@[<hov 1>(\
       @[<hov 1>(round@ %d)@]@ \
@@ -109,6 +111,7 @@ let [@ocamlformat "disable"] print ppf { round; typing_env;
     number_of_continuations_defined_in_current_continuation
 
 let define_variable t var kind =
+  let some_variables = Variable.Set.add (Bound_var.var var) t.some_variables in
   let typing_env =
     let var = Bound_name.create_var var in
     TE.add_definition t.typing_env var kind
@@ -118,7 +121,7 @@ let define_variable t var kind =
     then Variable.Set.add (Bound_var.var var) t.variables_defined_at_toplevel
     else t.variables_defined_at_toplevel
   in
-  { t with typing_env; variables_defined_at_toplevel }
+  { t with typing_env; variables_defined_at_toplevel; some_variables }
 
 let create ~round ~(resolver : resolver)
     ~(get_imported_names : get_imported_names)
@@ -126,31 +129,35 @@ let create ~round ~(resolver : resolver)
     ~unit_toplevel_exn_continuation ~unit_toplevel_return_continuation
     ~toplevel_my_region ~dummy_toplevel_cont =
   let typing_env = TE.create ~resolver ~get_imported_names in
-  let t = { round;
-    typing_env;
-    inlined_debuginfo = Inlined_debuginfo.none;
-    can_inline = true;
-    inlining_state = Inlining_state.default ~round;
-    propagating_float_consts;
-    at_unit_toplevel = true;
-    unit_toplevel_return_continuation;
-    unit_toplevel_exn_continuation;
-    variables_defined_at_toplevel = Variable.Set.empty;
-    cse = CSE.empty;
-    comparison_results = Variable.Map.empty;
-    do_not_rebuild_terms = false;
-    closure_info = Closure_info.not_in_a_closure;
-    all_code = Code_id.Map.empty;
-    get_imported_code;
-    inlining_history_tracker =
-      Inlining_history.Tracker.empty (Compilation_unit.get_current_exn ());
-    loopify_state = Loopify_state.do_not_loopify;
-    continuation_stack = [dummy_toplevel_cont];
-    variables_defined_in_current_continuation = Lifted_cont_params.empty;
-    number_of_continuations_defined_in_current_continuation = 0;
-    some_variables = Variable.Set.empty
-    } in
-  define_variable t (Bound_var.create toplevel_my_region Name_mode.normal) K.region
+  let t =
+    { round;
+      typing_env;
+      inlined_debuginfo = Inlined_debuginfo.none;
+      can_inline = true;
+      inlining_state = Inlining_state.default ~round;
+      propagating_float_consts;
+      at_unit_toplevel = true;
+      unit_toplevel_return_continuation;
+      unit_toplevel_exn_continuation;
+      variables_defined_at_toplevel = Variable.Set.empty;
+      cse = CSE.empty;
+      comparison_results = Variable.Map.empty;
+      do_not_rebuild_terms = false;
+      closure_info = Closure_info.not_in_a_closure;
+      all_code = Code_id.Map.empty;
+      get_imported_code;
+      inlining_history_tracker =
+        Inlining_history.Tracker.empty (Compilation_unit.get_current_exn ());
+      loopify_state = Loopify_state.do_not_loopify;
+      continuation_stack = [dummy_toplevel_cont];
+      variables_defined_in_current_continuation = Lifted_cont_params.empty;
+      number_of_continuations_defined_in_current_continuation = 0;
+      some_variables = Variable.Set.empty
+    }
+  in
+  define_variable t
+    (Bound_var.create toplevel_my_region Name_mode.normal)
+    K.region
 
 let continuation_stack t = t.continuation_stack
 
@@ -218,7 +225,8 @@ let enter_set_of_closures
       loopify_state = _;
       continuation_stack = _;
       variables_defined_in_current_continuation = _;
-      number_of_continuations_defined_in_current_continuation = _
+      number_of_continuations_defined_in_current_continuation = _;
+      some_variables = _
     } =
   { round;
     typing_env = TE.closure_env typing_env;
@@ -240,7 +248,8 @@ let enter_set_of_closures
     loopify_state = Loopify_state.do_not_loopify;
     continuation_stack = [];
     variables_defined_in_current_continuation = Lifted_cont_params.empty;
-    number_of_continuations_defined_in_current_continuation = 0
+    number_of_continuations_defined_in_current_continuation = 0;
+    some_variables = Variable.Set.empty
   }
 
 let define_name t name kind =
@@ -572,6 +581,8 @@ let enter_continuation cont lifted_params t =
     number_of_continuations_defined_in_current_continuation = 0
   }
 
+let some_variables t = t.some_variables
+
 let variables_defined_in_current_continuation t =
   t.variables_defined_in_current_continuation
 
@@ -616,6 +627,7 @@ let denv_for_lifted_continuation ~denv_for_join ~denv =
     continuation_stack = denv_for_join.continuation_stack;
     variables_defined_in_current_continuation =
       denv_for_join.variables_defined_in_current_continuation;
+    some_variables = denv_for_join.some_variables;
     number_of_continuations_defined_in_current_continuation =
       denv_for_join.number_of_continuations_defined_in_current_continuation;
     (* For the following fields, both denvs should have the same value of these
