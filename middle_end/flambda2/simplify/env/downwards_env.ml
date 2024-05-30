@@ -244,20 +244,18 @@ let enter_set_of_closures
   }
 
 let add_name t name ty =
-  let typing_env =
-    TE.add_equation
-      (TE.add_definition t.typing_env name (T.kind ty))
-      (Bound_name.name name) ty
-  in
-  let variables_defined_at_toplevel =
-    Name.pattern_match (Bound_name.name name)
-      ~var:(fun var ->
-        if t.at_unit_toplevel
-        then Variable.Set.add var t.variables_defined_at_toplevel
-        else t.variables_defined_at_toplevel)
-      ~symbol:(fun _ -> t.variables_defined_at_toplevel)
-  in
-  { t with typing_env; variables_defined_at_toplevel }
+  Name.pattern_match (Bound_name.name name)
+    ~var:(fun var ->
+      define_variable t
+        (Bound_var.create var (Bound_name.name_mode name))
+        (T.kind ty))
+    ~symbol:(fun _ ->
+      { t with
+        typing_env =
+          TE.add_equation
+            (TE.add_definition t.typing_env name (T.kind ty))
+            (Bound_name.name name) ty
+      })
 
 let add_variable0 t var ty ~at_unit_toplevel =
   let typing_env =
