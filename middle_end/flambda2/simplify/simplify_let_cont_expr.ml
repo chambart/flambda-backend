@@ -1189,6 +1189,8 @@ and simplify_handler ~simplify_expr ~is_recursive ~is_exn_handler ~lifted_params
           (Bound_parameters.to_list
              (Bound_parameters.append all_params all_extra_params)))
   in
+  if Sys.getenv_opt "PLOP" <> None then
+    Format.eprintf "CONT = %a LIFTED = %a@." Continuation.print cont Lifted_cont_params.print lifted_params;
   let () =
     let some_variables = DE.some_variables (DA.denv dacc) in
     let all_bp = (Bound_parameters.var_set
