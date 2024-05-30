@@ -152,6 +152,7 @@ let create ~round ~(resolver : resolver)
     }
   in
   define_variable t (Bound_var.create toplevel_my_region Name_mode.normal)
+    K.region
 
 let continuation_stack t = t.continuation_stack
 
