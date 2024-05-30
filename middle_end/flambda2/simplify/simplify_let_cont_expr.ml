@@ -260,7 +260,8 @@ let add_extra_params_and_args_for_lifting cont_lifting_params
               (EPA.Extra_arg.Already_in_scope arg) map)
           Apply_cont_rewrite_id.Map.empty uses
       in
-      EPA.add epa ~extra_param ~extra_args)
+      let invalids = Apply_cont_rewrite_id.Set.empty in
+      EPA.add epa ~extra_param ~extra_args ~invalids)
 
 let decide_param_usage_non_recursive ~free_names ~required_names
     ~removed_aliased ~exn_bucket param : Apply_cont_rewrite.used =

@@ -175,7 +175,8 @@ let compute_extra_params_and_args
   extra_params_and_args
 
 let compute_extra_params_in_unspecified_order
-    ({ decisions; rewrite_ids_seen = _ } : Decisions.t) =
+    ({ decisions; rewrite_ids_seen = _; rewrites_ids_known_as_invalid = _ } :
+      Decisions.t) =
   List.fold_left
     (fun extra_params (_, decision) ->
       Unboxing_epa.compute_extra_params_in_unspecified_order extra_params
