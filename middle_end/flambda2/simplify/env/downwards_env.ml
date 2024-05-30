@@ -49,6 +49,8 @@ type t =
     loopify_state : Loopify_state.t;
     continuation_stack : Continuation.t list;
     variables_defined_in_current_continuation : Lifted_cont_params.t;
+    variables_defined_in_current_continuation' : Lifted_cont_params.t;
+    lifted : Variable.Set.t;
     number_of_continuations_defined_in_current_continuation : int
         (* this last field makes it possible to count the number of parameters
            added by the lifting process, and therefore estimate the cost of
@@ -65,6 +67,8 @@ let [@ocamlformat "disable"] print ppf { round; typing_env;
                 get_imported_code = _; inlining_history_tracker = _;
                 loopify_state; continuation_stack;
                 variables_defined_in_current_continuation;
+                variables_defined_in_current_continuation' = _;
+                lifted = _;
                 number_of_continuations_defined_in_current_continuation;
               } =
   Format.fprintf ppf "@[<hov 1>(\
@@ -109,6 +113,14 @@ let [@ocamlformat "disable"] print ppf { round; typing_env;
     number_of_continuations_defined_in_current_continuation
 
 let define_variable t var kind =
+  let variables_defined_in_current_continuation' =
+    if Variable.Set.mem (Bound_var.var var) t.lifted then
+      t.variables_defined_in_current_continuation'
+    else
+      let kind = Flambda_kind.With_subkind.create kind Anything in
+      Lifted_cont_params.new_param t.variables_defined_in_current_continuation'
+        (Bound_parameter.create (Bound_var.var var) kind)
+  in
   let typing_env =
     let var = Bound_name.create_var var in
     TE.add_definition t.typing_env var kind
@@ -118,7 +130,11 @@ let define_variable t var kind =
     then Variable.Set.add (Bound_var.var var) t.variables_defined_at_toplevel
     else t.variables_defined_at_toplevel
   in
-  { t with typing_env; variables_defined_at_toplevel }
+  { t with
+    typing_env;
+    variables_defined_at_toplevel;
+    variables_defined_in_current_continuation'
+  }
 
 let create ~round ~(resolver : resolver)
     ~(get_imported_names : get_imported_names)
@@ -148,10 +164,13 @@ let create ~round ~(resolver : resolver)
       loopify_state = Loopify_state.do_not_loopify;
       continuation_stack = [];
       variables_defined_in_current_continuation = Lifted_cont_params.empty;
+      variables_defined_in_current_continuation' = Lifted_cont_params.empty;
+      lifted = Variable.Set.empty;
       number_of_continuations_defined_in_current_continuation = 0
     }
   in
-  define_variable t (Bound_var.create toplevel_my_region Name_mode.normal)
+  define_variable t
+    (Bound_var.create toplevel_my_region Name_mode.normal)
     K.region
 
 let continuation_stack t = t.continuation_stack
@@ -220,6 +239,8 @@ let enter_set_of_closures
       loopify_state = _;
       continuation_stack = _;
       variables_defined_in_current_continuation = _;
+      variables_defined_in_current_continuation' = _;
+      lifted = _;
       number_of_continuations_defined_in_current_continuation = _
     } =
   { round;
@@ -242,6 +263,8 @@ let enter_set_of_closures
     loopify_state = Loopify_state.do_not_loopify;
     continuation_stack = [];
     variables_defined_in_current_continuation = Lifted_cont_params.empty;
+    variables_defined_in_current_continuation' = Lifted_cont_params.empty;
+    lifted = Variable.Set.empty;
     number_of_continuations_defined_in_current_continuation = 0
   }
 
@@ -549,6 +572,14 @@ let with_code_age_relation code_age_relation t =
     typing_env = TE.with_code_age_relation t.typing_env code_age_relation
   }
 
+let reset_lifted_params lifted_params t =
+  Format.printf "Reset:@.%a@." Lifted_cont_params.print lifted_params;
+  let lifted =
+    Lifted_cont_params.fold ~init:Variable.Set.empty ~f:(fun _ bp set ->
+        Variable.Set.add (Bound_parameter.var bp) set) lifted_params
+  in
+  { t with variables_defined_in_current_continuation' = lifted_params; lifted }
+
 let enter_continuation cont lifted_params t =
   { t with
     continuation_stack = cont :: t.continuation_stack;
@@ -557,7 +588,19 @@ let enter_continuation cont lifted_params t =
   }
 
 let variables_defined_in_current_continuation t =
-  t.variables_defined_in_current_continuation
+  (* let a = t.variables_defined_in_current_continuation in *)
+  (* let b = t.variables_defined_in_current_continuation' in *)
+  (* if not (Lifted_cont_params.length a = Lifted_cont_params.length b) then
+     begin *)
+  (*   Format.eprintf "PAS PAREIL:@.%a@.%a@." *)
+  (*     Lifted_cont_params.print a *)
+  (*     Lifted_cont_params.print b; *)
+  (*   assert false *)
+  (* end; *)
+  t.variables_defined_in_current_continuation'
+
+let variables_defined_in_current_continuation' t =
+  t.variables_defined_in_current_continuation'
 
 let add_variable_defined_in_current_continuation t bound_param =
   { t with
@@ -600,6 +643,9 @@ let denv_for_lifted_continuation ~denv_for_join ~denv =
     continuation_stack = denv_for_join.continuation_stack;
     variables_defined_in_current_continuation =
       denv_for_join.variables_defined_in_current_continuation;
+    variables_defined_in_current_continuation' =
+      denv_for_join.variables_defined_in_current_continuation';
+    lifted = denv_for_join.lifted;
     number_of_continuations_defined_in_current_continuation =
       denv_for_join.number_of_continuations_defined_in_current_continuation;
     (* For the following fields, both denvs should have the same value of these

@@ -1100,6 +1100,7 @@ and prepare_dacc_for_handlers dacc ~env_at_fork ~params ~is_recursive
     ~lifted_params ~arg_types_by_use_id =
   (* In the recursive case, [params] are actually the invariant params, as we
      prepare a common dacc for all handlers. *)
+  let env_at_fork = DE.reset_lifted_params lifted_params env_at_fork in
   let join_result =
     (* We add to the continuation uses (and therefore to the handler env) the
        params added by the eventual lifting of continuations. *)
@@ -1175,6 +1176,9 @@ and prepare_dacc_for_handlers dacc ~env_at_fork ~params ~is_recursive
           Continuation.print cont
       | None -> handler_env, do_not_unbox (), false, dacc)
   in
+  let b = DE.variables_defined_in_current_continuation' handler_env in
+  Format.eprintf "AFTER_JOIN@.%a:@.@."
+    Lifted_cont_params.print b;
   ( DA.with_denv dacc handler_env,
     unbox_decisions,
     is_exn_handler,
@@ -1192,6 +1196,13 @@ and simplify_handler ~simplify_expr ~is_recursive ~is_exn_handler ~lifted_params
           denv
           (Bound_parameters.to_list
              (Bound_parameters.append all_params all_extra_params)))
+  in
+  let () =
+    let a = DE.variables_defined_in_current_continuation (DA.denv dacc) in
+    let b = DE.variables_defined_in_current_continuation' (DA.denv dacc) in
+    Format.eprintf "ADDED %a:@.%a@.%a@.@."
+      Are_lifting_conts.print (DA.are_lifting_conts dacc)
+      Lifted_cont_params.print a Lifted_cont_params.print b
   in
   let dacc = DA.with_continuation_uses_env dacc ~cont_uses_env:CUE.empty in
   let dacc =
