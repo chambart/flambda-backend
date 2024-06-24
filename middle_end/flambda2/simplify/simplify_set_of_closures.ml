@@ -723,7 +723,8 @@ let simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
     ~original_defining_expr:(Named.create_set_of_closures set_of_closures)
 
 let simplify_non_lifted_set_of_closures0 dacc bound_vars ~closure_bound_vars
-    set_of_closures ~value_slots ~value_slot_types ~simplify_function_body ~bindings_to_place =
+    set_of_closures ~value_slots ~value_slot_types ~simplify_function_body ~bindings_to_place
+    ~added_unboxed_value_slots:_ =
   let closure_bound_names =
     Function_slot.Map.map Bound_name.create_var closure_bound_vars
   in
@@ -764,12 +765,18 @@ let simplify_non_lifted_set_of_closures0 dacc bound_vars ~closure_bound_vars
           Some (Named.create_set_of_closures set_of_closures)
                            }])
 
+type added_unboxed_value_slot =
+  { slot_of_unboxed_closure : Value_slot.t;
+    function_slot : Function_slot.t;
+    unboxed_fields : Value_slot.t Value_slot.Map.t }
+
 type lifting_decision_result =
   { can_lift : bool;
     value_slots : Simple.t Value_slot.Map.t;
     value_slot_types : T.t Value_slot.Map.t;
     symbol_projections : Symbol_projection.t Variable.Map.t;
     bindings_to_place : Expr_builder.binding_to_place list;
+    added_unboxed_value_slots : added_unboxed_value_slot list;
   }
 
 let type_value_slots_and_make_lifting_decision_for_one_set dacc
@@ -783,10 +790,10 @@ let type_value_slots_and_make_lifting_decision_for_one_set dacc
      closure declaration. (Such deletions end up occurring during the upwards
      traversal and during [To_cmm], by which time the necessary information is
      available.) *)
-  let value_slots, value_slot_types, symbol_projections, bindings_to_place =
+  let value_slots, value_slot_types, symbol_projections, bindings_to_place, added_unboxed_value_slots =
     Value_slot.Map.fold
       (fun value_slot env_entry
-           (value_slots, value_slot_types, symbol_projections, bindings_to_place) ->
+           (value_slots, value_slot_types, symbol_projections, bindings_to_place, added_unboxed_value_slots) ->
         let env_entry, ty, symbol_projections =
           let ty =
             S.simplify_simple dacc env_entry
@@ -813,18 +820,19 @@ let type_value_slots_and_make_lifting_decision_for_one_set dacc
         let value_slot_types =
           Value_slot.Map.add value_slot ty value_slot_types
         in
-        let value_slots, value_slot_types, bindings_to_place =
+        let value_slots, value_slot_types, bindings_to_place, added_unboxed_value_slots =
           match T.prove_single_closures_entry (DA.typing_env dacc) ty with
-          | Unknown -> value_slots, value_slot_types, bindings_to_place
+          | Unknown -> value_slots, value_slot_types, bindings_to_place, added_unboxed_value_slots
           | Proved (function_slot, _alloc_mode, closures_entry, function_type) ->
             let code_id = T.Function_type.code_id function_type in
             let code_or_metadata = DE.find_code_exn (DA.denv dacc) code_id in
             let is_stub = Code_metadata.stub (Code_or_metadata.code_metadata code_or_metadata) in
             if not is_stub then
-              value_slots, value_slot_types, bindings_to_place
+              value_slots, value_slot_types, bindings_to_place, added_unboxed_value_slots
             else begin
               let value_slots_to_unbox = T.Closures_entry.value_slot_types closures_entry in
-              Value_slot.Map.fold (fun value_slot_to_unbox type_of_slot (value_slots, value_slot_types, bindings_to_place) ->
+              let (value_slots, value_slot_types, bindings_to_place, unboxed_fields) =
+              Value_slot.Map.fold (fun value_slot_to_unbox type_of_slot (value_slots, value_slot_types, bindings_to_place, unboxed_fields) ->
                 let var = Variable.create (Value_slot.name value_slot_to_unbox) in
                 let let_bound = Bound_pattern.singleton (Bound_var.create var Name_mode.normal) in
                 let simplified_defining_expr =
@@ -841,15 +849,26 @@ let type_value_slots_and_make_lifting_decision_for_one_set dacc
                 let binding_to_place = { Expr_builder.let_bound ; simplified_defining_expr; original_defining_expr = None } in
                 let bindings_to_place = binding_to_place :: bindings_to_place in
                 let unboxed_value_slot = Value_slot.create (Compilation_unit.get_current_exn ()) ~name:(Value_slot.name value_slot_to_unbox) (Value_slot.kind value_slot_to_unbox) in
+                let unboxed_fields =
+                    Value_slot.Map.add value_slot_to_unbox unboxed_value_slot unboxed_fields in
                 let value_slots = Value_slot.Map.add unboxed_value_slot (Simple.var var) value_slots in
                 let value_slot_types = Value_slot.Map.add unboxed_value_slot type_of_slot value_slot_types in
-                value_slots, value_slot_types, bindings_to_place
-              ) value_slots_to_unbox (value_slots, value_slot_types, bindings_to_place)
+                value_slots, value_slot_types, bindings_to_place, unboxed_fields
+                  ) value_slots_to_unbox (value_slots, value_slot_types, bindings_to_place, Value_slot.Map.empty) in
+              let added_unboxed_value_slot =
+                { slot_of_unboxed_closure = value_slot;
+                  function_slot;
+                  unboxed_fields }
+              in
+              let added_unboxed_value_slots = added_unboxed_value_slot :: added_unboxed_value_slots
+
+              in
+              value_slots, value_slot_types, bindings_to_place, added_unboxed_value_slots
             end
         in
-        value_slots, value_slot_types, symbol_projections, bindings_to_place)
+        value_slots, value_slot_types, symbol_projections, bindings_to_place, added_unboxed_value_slots)
       (Set_of_closures.value_slots set_of_closures)
-      (Value_slot.Map.empty, Value_slot.Map.empty, Variable.Map.empty, [])
+      (Value_slot.Map.empty, Value_slot.Map.empty, Variable.Map.empty, [], [])
   in
   let can_lift_coercion coercion =
     NO.no_variables (Coercion.free_names coercion)
@@ -897,7 +916,7 @@ let type_value_slots_and_make_lifting_decision_for_one_set dacc
     Name_mode.is_normal name_mode_of_bound_vars
     && Value_slot.Map.for_all value_slot_permits_lifting value_slots
   in
-  { can_lift; value_slots; value_slot_types; symbol_projections; bindings_to_place }
+  { can_lift; value_slots; value_slot_types; symbol_projections; bindings_to_place; added_unboxed_value_slots }
 
 let simplify_non_lifted_set_of_closures dacc (bound_vars : Bound_pattern.t)
     set_of_closures =
@@ -916,18 +935,19 @@ let simplify_non_lifted_set_of_closures dacc (bound_vars : Bound_pattern.t)
       |> Function_declarations.funs_in_order |> Function_slot.Lmap.keys)
       closure_bound_vars
   in
-  let { can_lift; value_slots; value_slot_types; symbol_projections; bindings_to_place } =
+  let { can_lift; value_slots; value_slot_types; symbol_projections; bindings_to_place; added_unboxed_value_slots } =
     type_value_slots_and_make_lifting_decision_for_one_set dacc
       ~name_mode_of_bound_vars set_of_closures
   in
   if can_lift
   then
     let () = assert (List.length bindings_to_place = 0) in
+    let () = assert (List.length added_unboxed_value_slots = 0) in
     simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
       ~closure_bound_vars set_of_closures ~value_slots ~symbol_projections
   else
     simplify_non_lifted_set_of_closures0 dacc bound_vars ~closure_bound_vars
-      set_of_closures ~value_slots ~value_slot_types ~bindings_to_place
+      set_of_closures ~value_slots ~value_slot_types ~bindings_to_place ~added_unboxed_value_slots
 
 let simplify_lifted_set_of_closures0 dacc context ~closure_symbols
     ~closure_bound_names_inside ~value_slots ~value_slot_types set_of_closures =
@@ -970,11 +990,13 @@ let simplify_lifted_sets_of_closures dacc ~all_sets_of_closures_and_symbols
               value_slot_types;
               symbol_projections = _;
               bindings_to_place;
+              added_unboxed_value_slots;
             } =
           type_value_slots_and_make_lifting_decision_for_one_set dacc
             ~name_mode_of_bound_vars:Name_mode.normal set_of_closures
         in
         assert (List.length bindings_to_place = 0);
+        assert (List.length added_unboxed_value_slots = 0);
         value_slots, value_slot_types)
       all_sets_of_closures
   in
