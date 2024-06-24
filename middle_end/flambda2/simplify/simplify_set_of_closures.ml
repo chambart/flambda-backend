@@ -816,7 +816,7 @@ let type_value_slots_and_make_lifting_decision_for_one_set dacc
         let value_slots, value_slot_types, bindings_to_place =
           match T.prove_single_closures_entry (DA.typing_env dacc) ty with
           | Unknown -> value_slots, value_slot_types, bindings_to_place
-          | Proved (_function_slot, _alloc_mode, closures_entry, function_type) ->
+          | Proved (function_slot, _alloc_mode, closures_entry, function_type) ->
             let code_id = T.Function_type.code_id function_type in
             let code_or_metadata = DE.find_code_exn (DA.denv dacc) code_id in
             let is_stub = Code_metadata.stub (Code_or_metadata.code_metadata code_or_metadata) in
@@ -827,8 +827,17 @@ let type_value_slots_and_make_lifting_decision_for_one_set dacc
               Value_slot.Map.fold (fun value_slot_to_unbox type_of_slot (value_slots, value_slot_types, bindings_to_place) ->
                 let var = Variable.create (Value_slot.name value_slot_to_unbox) in
                 let let_bound = Bound_pattern.singleton (Bound_var.create var Name_mode.normal) in
-                (* TODO project value slot *)
-                let simplified_defining_expr = Simplified_named.create (Named.create_simple (Simple.const_int (Targetint_31_63.of_int 3))) in
+                let simplified_defining_expr =
+                  let project =
+                    Named.create_prim
+                      (Unary (Project_value_slot {
+                          project_from = function_slot;
+                          value_slot = value_slot_to_unbox;
+                      }, env_entry))
+                      Debuginfo.none
+                  in
+                  Simplified_named.create project
+                  in
                 let binding_to_place = { Expr_builder.let_bound ; simplified_defining_expr; original_defining_expr = None } in
                 let bindings_to_place = binding_to_place :: bindings_to_place in
                 let unboxed_value_slot = Value_slot.create (Compilation_unit.get_current_exn ()) ~name:(Value_slot.name value_slot_to_unbox) (Value_slot.kind value_slot_to_unbox) in
