@@ -153,7 +153,7 @@ let simplify_function_body context ~outer_dacc function_slot_opt
     ~closure_bound_names_inside_function ~inlining_arguments ~absolute_history
     code_id code ~return_continuation ~exn_continuation params ~body ~my_closure
     ~is_my_closure_used:_ ~my_region ~my_depth ~free_names_of_body:_
-    ~added_unboxed_value_slots:_  =
+    ~added_unboxed_value_slots =
   let loopify_state =
     if Loopify_attribute.should_loopify (Code.loopify code)
     then Loopify_state.loopify (Continuation.create ~name:"self" ())
@@ -164,6 +164,102 @@ let simplify_function_body context ~outer_dacc function_slot_opt
       ~my_depth function_slot_opt ~closure_bound_names_inside_function
       ~inlining_arguments ~absolute_history code_id ~return_continuation
       ~exn_continuation ~loopify_state (Code.code_metadata code)
+  in
+  let tenv =
+    List.fold_left (fun tenv added ->
+        (* Very redundent... *)
+        let function_slot =
+          (* What is the meaning of None here ? *)
+          Option.get function_slot_opt in
+        let unboxed_closure_var = Variable.create "unboxed_closure" in
+        let tenv =
+          let bound_name = Bound_name.create (Name.var unboxed_closure_var) Name_mode.in_types in
+          let kind_with_subkind = Value_slot.kind added.slot_of_unboxed_closure in
+          Typing_env.add_definition tenv bound_name (K.With_subkind.kind kind_with_subkind)
+        in
+        let my_closure_add_ty =
+          let kind = Value_slot.kind added.slot_of_unboxed_closure in
+          T.closure_with_at_least_these_value_slots
+            ~this_function_slot:function_slot
+            (Value_slot.Map.of_list [
+               added.slot_of_unboxed_closure, (unboxed_closure_var, kind)
+             ])
+        in
+        let my_closure_ty = T.alias_type_of K.value (Simple.var my_closure) in
+        let tenv =
+          match T.meet tenv my_closure_ty my_closure_add_ty with
+          | Bottom -> tenv (* What to do when this is bottom ? This probably shouldn't occur, but that would be a sign of a bug *)
+          | Ok (_ty, tee) ->
+            T.Typing_env.add_env_extension tenv tee
+        in
+
+        let tenv =
+          Value_slot.Map.fold (fun (vs_from : Value_slot.t) (vs_to : Value_slot.t) tenv ->
+              let var_from = Variable.create "from" in
+              let var_to = Variable.create "to" in
+              let add_definition tenv function_slot closure_var var vs =
+                let tenv =
+                  let bound_name = Bound_name.create (Name.var var) Name_mode.in_types in
+                  let kind_with_subkind = Value_slot.kind vs in
+                  Typing_env.add_definition tenv bound_name (K.With_subkind.kind kind_with_subkind)
+                in
+
+                let closure_add_ty =
+                  let kind = Value_slot.kind vs in
+                  T.closure_with_at_least_this_value_slot
+                    ~this_function_slot:function_slot
+                    vs ~value_slot_var:unboxed_closure_var ~value_slot_kind:kind
+                in
+                let closure_ty = T.alias_type_of K.value (Simple.var closure_var) in
+                let tenv =
+                  match T.meet tenv closure_ty closure_add_ty with
+                  | Bottom -> tenv (* ? *)
+                  | Ok (_ty, tee) ->
+                    T.Typing_env.add_env_extension tenv tee
+                in
+                tenv
+              in
+              let tenv = add_definition tenv added.function_slot unboxed_closure_var var_from vs_from in
+              let tenv = add_definition tenv function_slot my_closure var_to vs_to in
+              let tenv =
+                let ty_to = T.alias_type_of K.value (Simple.var var_to) in
+                let ty_from = T.alias_type_of K.value (Simple.var var_from) in
+                match T.meet tenv ty_to ty_from with
+                | Bottom -> tenv (* ? *)
+                | Ok (_ty, tee) ->
+                  T.Typing_env.add_env_extension tenv tee
+              in
+              tenv
+            ) added.unboxed_fields tenv
+        in
+
+        tenv
+      ) (DA.typing_env dacc_at_function_entry) added_unboxed_value_slots
+  in
+  let body =
+    List.fold_left (fun body added ->
+        (* This part is kind of dumb, but otherwise we wouldn't have CSE equations telling how to get that from 'my_closure' *)
+        let function_slot = Option.get function_slot_opt in
+        Value_slot.Map.fold (fun (_ : Value_slot.t) (vs_to : Value_slot.t) body ->
+            let let_expr =
+              let var = Variable.create "project_for_CSE" in
+              let bp = Bound_pattern.singleton (Bound_var.create var Name_mode.normal) in
+              let named =
+                Named.create_prim
+                  (Unary (Project_value_slot {
+                         project_from = function_slot;
+                         value_slot = vs_to;
+                       }, (Simple.var my_closure)))
+                  Debuginfo.none
+              in
+              Flambda.Let_expr.create bp named ~body ~free_names_of_body:Unknown
+            in
+            Flambda.Expr.create_let let_expr
+          ) added.unboxed_fields body
+      ) body added_unboxed_value_slots
+  in
+  let dacc_at_function_entry =
+    DA.map_denv dacc_at_function_entry ~f:(fun denv -> DE.with_typing_env denv tenv)
   in
   let dacc = dacc_at_function_entry in
   if not (DA.no_lifted_constants dacc)
