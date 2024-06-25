@@ -26,6 +26,12 @@ open! Simplify_import
 
 module C = Simplify_set_of_closures_context
 
+
+type added_unboxed_value_slot =
+  { slot_of_unboxed_closure : Value_slot.t;
+    function_slot : Function_slot.t;
+    unboxed_fields : Value_slot.t Value_slot.Map.t }
+
 let dacc_inside_function context ~outer_dacc ~params ~my_closure ~my_region
     ~my_depth function_slot_opt ~closure_bound_names_inside_function
     ~inlining_arguments ~absolute_history code_id ~return_continuation
@@ -146,7 +152,8 @@ type simplify_function_body_result =
 let simplify_function_body context ~outer_dacc function_slot_opt
     ~closure_bound_names_inside_function ~inlining_arguments ~absolute_history
     code_id code ~return_continuation ~exn_continuation params ~body ~my_closure
-    ~is_my_closure_used:_ ~my_region ~my_depth ~free_names_of_body:_ =
+    ~is_my_closure_used:_ ~my_region ~my_depth ~free_names_of_body:_
+    ~added_unboxed_value_slots:_  =
   let loopify_state =
     if Loopify_attribute.should_loopify (Code.loopify code)
     then Loopify_state.loopify (Continuation.create ~name:"self" ())
@@ -317,7 +324,7 @@ type simplify_function_result =
   }
 
 let simplify_function0 context ~outer_dacc function_slot_opt code_id code
-    ~closure_bound_names_inside_function =
+    ~closure_bound_names_inside_function ~added_unboxed_value_slots =
   let denv_prior_to_sets = C.dacc_prior_to_sets context |> DA.denv in
   let inlining_arguments_from_denv =
     denv_prior_to_sets |> DE.inlining_arguments
@@ -367,7 +374,7 @@ let simplify_function0 context ~outer_dacc function_slot_opt code_id code
       ~f:
         (simplify_function_body context ~outer_dacc function_slot_opt
            ~closure_bound_names_inside_function ~inlining_arguments
-           ~absolute_history code_id code)
+           ~absolute_history ~added_unboxed_value_slots code_id code)
   in
   let should_resimplify = UA.resimplify uacc_after_upwards_traversal in
   let outer_dacc, lifted_consts_this_function =
@@ -468,7 +475,7 @@ let introduce_code dacc code_id code_const =
     (LCS.singleton code)
 
 let simplify_function context ~outer_dacc function_slot code_id
-    ~closure_bound_names_inside_function =
+    ~closure_bound_names_inside_function ~added_unboxed_value_slots =
   let code_or_metadata =
     DE.find_code_exn (DA.denv (C.dacc_prior_to_sets context)) code_id
   in
@@ -478,7 +485,7 @@ let simplify_function context ~outer_dacc function_slot code_id
       let rec run ~outer_dacc ~code count =
         let { code_id; code = new_code; outer_dacc; should_resimplify } =
           simplify_function0 context ~outer_dacc (Some function_slot) code_id
-            code ~closure_bound_names_inside_function
+            code ~closure_bound_names_inside_function ~added_unboxed_value_slots
         in
         match new_code with
         | None -> code_id, outer_dacc
@@ -526,7 +533,7 @@ type simplify_set_of_closures0_result =
 
 let simplify_set_of_closures0 outer_dacc context set_of_closures
     ~closure_bound_names ~closure_bound_names_inside ~value_slots
-    ~value_slot_types =
+    ~value_slot_types ~added_unboxed_value_slots =
   let dacc = C.dacc_prior_to_sets context in
   let function_decls = Set_of_closures.function_decls set_of_closures in
   let all_function_decls_in_set =
@@ -544,6 +551,7 @@ let simplify_set_of_closures0 outer_dacc context set_of_closures
         let code_id, outer_dacc, code_ids_to_never_delete_this_set =
           simplify_function context ~outer_dacc function_slot old_code_id
             ~closure_bound_names_inside_function:closure_bound_names_inside
+            ~added_unboxed_value_slots
         in
         let function_type =
           let rec_info =
@@ -674,6 +682,7 @@ let simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
   let { set_of_closures; dacc } =
     simplify_set_of_closures0 dacc context set_of_closures ~closure_bound_names
       ~closure_bound_names_inside ~value_slots ~value_slot_types
+      ~added_unboxed_value_slots:[]
   in
   let closure_symbols_set =
     Symbol.Set.of_list (Function_slot.Lmap.data closure_symbols)
@@ -724,7 +733,7 @@ let simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
 
 let simplify_non_lifted_set_of_closures0 dacc bound_vars ~closure_bound_vars
     set_of_closures ~value_slots ~value_slot_types ~simplify_function_body ~bindings_to_place
-    ~added_unboxed_value_slots:_ =
+    ~added_unboxed_value_slots =
   let closure_bound_names =
     Function_slot.Map.map Bound_name.create_var closure_bound_vars
   in
@@ -740,6 +749,7 @@ let simplify_non_lifted_set_of_closures0 dacc bound_vars ~closure_bound_vars
   let { set_of_closures; dacc } =
     simplify_set_of_closures0 dacc context set_of_closures ~closure_bound_names
       ~closure_bound_names_inside ~value_slots ~value_slot_types
+      ~added_unboxed_value_slots
   in
   let defining_expr =
     let named = Named.create_set_of_closures set_of_closures in
@@ -764,11 +774,6 @@ let simplify_non_lifted_set_of_closures0 dacc bound_vars ~closure_bound_vars
         original_defining_expr =
           Some (Named.create_set_of_closures set_of_closures)
                            }])
-
-type added_unboxed_value_slot =
-  { slot_of_unboxed_closure : Value_slot.t;
-    function_slot : Function_slot.t;
-    unboxed_fields : Value_slot.t Value_slot.Map.t }
 
 type lifting_decision_result =
   { can_lift : bool;
@@ -860,9 +865,7 @@ let type_value_slots_and_make_lifting_decision_for_one_set dacc
                   function_slot;
                   unboxed_fields }
               in
-              let added_unboxed_value_slots = added_unboxed_value_slot :: added_unboxed_value_slots
-
-              in
+              let added_unboxed_value_slots = added_unboxed_value_slot :: added_unboxed_value_slots in
               value_slots, value_slot_types, bindings_to_place, added_unboxed_value_slots
             end
         in
@@ -958,6 +961,7 @@ let simplify_lifted_set_of_closures0 dacc context ~closure_symbols
   let { set_of_closures; dacc } =
     simplify_set_of_closures0 dacc context set_of_closures ~closure_bound_names
       ~closure_bound_names_inside ~value_slots ~value_slot_types
+      ~added_unboxed_value_slots:[]
   in
   let set_of_closures_pattern =
     Bound_static.Pattern.set_of_closures closure_symbols
@@ -1039,6 +1043,7 @@ let simplify_stub_function dacc code ~all_code ~simplify_function_body =
   let { code_id = _; code; outer_dacc; should_resimplify = _ } =
     simplify_function0 context ~outer_dacc:dacc None (Code.code_id code) code
       ~closure_bound_names_inside_function
+      ~added_unboxed_value_slots:[]
   in
   let code =
     match code with
