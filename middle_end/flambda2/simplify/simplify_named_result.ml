@@ -28,7 +28,7 @@ let create dacc bindings_to_place =
   { dacc; bindings_to_place; was_lifted_set_of_closures = false }
 
 let create_have_lifted_set_of_closures dacc bound_vars_to_symbols
-    ~original_defining_expr =
+    ~bindings_to_place ~original_defining_expr =
   (* The benefit of lifting the set of closures is added in [Simplify_named]. *)
   { dacc;
     bindings_to_place =
@@ -40,7 +40,8 @@ let create_have_lifted_set_of_closures dacc bound_vars_to_symbols
             original_defining_expr =
               (if i = 0 then Some original_defining_expr else None)
           })
-        bound_vars_to_symbols;
+        bound_vars_to_symbols
+      @ bindings_to_place;
     was_lifted_set_of_closures = true
   }
 

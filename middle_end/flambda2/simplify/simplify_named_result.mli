@@ -21,6 +21,7 @@ val create : Downwards_acc.t -> Expr_builder.binding_to_place list -> t
 val create_have_lifted_set_of_closures :
   Downwards_acc.t ->
   (Bound_var.t * Symbol.t) list ->
+  bindings_to_place:Expr_builder.binding_to_place list ->
   original_defining_expr:Named.t ->
   t
 

@@ -733,7 +733,7 @@ let simplify_set_of_closures0 outer_dacc context set_of_closures
 
 let simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
     ~closure_bound_vars set_of_closures ~value_slots ~symbol_projections
-    ~simplify_function_body =
+    ~simplify_function_body ~bindings_to_place ~added_unboxed_value_slots =
   let function_decls = Set_of_closures.function_decls set_of_closures in
   let closure_symbols =
     Function_slot.Lmap.mapi
@@ -787,7 +787,7 @@ let simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
   let { set_of_closures; dacc } =
     simplify_set_of_closures0 dacc context set_of_closures ~closure_bound_names
       ~closure_bound_names_inside ~value_slots ~value_slot_types
-      ~added_unboxed_value_slots:[]
+      ~added_unboxed_value_slots
   in
   let closure_symbols_set =
     Symbol.Set.of_list (Function_slot.Lmap.data closure_symbols)
@@ -833,7 +833,7 @@ let simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
       (Function_slot.Lmap.bindings closure_symbols)
   in
   Simplify_named_result.create_have_lifted_set_of_closures
-    (DA.with_denv dacc denv) bindings
+    (DA.with_denv dacc denv) bindings ~bindings_to_place
     ~original_defining_expr:(Named.create_set_of_closures set_of_closures)
 
 let simplify_non_lifted_set_of_closures0 dacc bound_vars ~closure_bound_vars
@@ -1049,10 +1049,11 @@ let simplify_non_lifted_set_of_closures dacc (bound_vars : Bound_pattern.t)
   in
   if can_lift
   then
-    let () = assert (List.length bindings_to_place = 0) in
-    let () = assert (List.length added_unboxed_value_slots = 0) in
+    (* let () = assert (List.length bindings_to_place = 0) in *)
+    (* let () = assert (List.length added_unboxed_value_slots = 0) in *)
     simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
       ~closure_bound_vars set_of_closures ~value_slots ~symbol_projections
+      ~bindings_to_place ~added_unboxed_value_slots
   else
     simplify_non_lifted_set_of_closures0 dacc bound_vars ~closure_bound_vars
       set_of_closures ~value_slots ~value_slot_types ~bindings_to_place ~added_unboxed_value_slots
