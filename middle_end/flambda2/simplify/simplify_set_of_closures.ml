@@ -208,7 +208,7 @@ let simplify_function_body context ~outer_dacc function_slot_opt
                   let kind = Value_slot.kind vs in
                   T.closure_with_at_least_this_value_slot
                     ~this_function_slot:function_slot
-                    vs ~value_slot_var:unboxed_closure_var ~value_slot_kind:kind
+                    vs ~value_slot_var:var ~value_slot_kind:kind
                 in
                 let closure_ty = T.alias_type_of K.value (Simple.var closure_var) in
                 let tenv =
