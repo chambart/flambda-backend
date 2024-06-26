@@ -171,6 +171,7 @@ let simplify_function_body context ~outer_dacc function_slot_opt
         let function_slot =
           (* What is the meaning of None here ? *)
           Option.get function_slot_opt in
+        (* Variable representing the closure to unbox. It is a field of my_closure *)
         let unboxed_closure_var = Variable.create "unboxed_closure" in
         let tenv =
           let bound_name = Bound_name.create (Name.var unboxed_closure_var) Name_mode.in_types in
@@ -188,14 +189,18 @@ let simplify_function_body context ~outer_dacc function_slot_opt
         let my_closure_ty = T.alias_type_of K.value (Simple.var my_closure) in
         let tenv =
           match T.meet tenv my_closure_ty my_closure_add_ty with
-          | Bottom -> tenv (* What to do when this is bottom ? This probably shouldn't occur, but that would be a sign of a bug *)
+          | Bottom ->
+            let _ = assert false in
+            tenv (* What to do when this is bottom ? This probably shouldn't occur, but that would be a sign of a bug *)
           | Ok (_ty, tee) ->
             T.Typing_env.add_env_extension tenv tee
         in
 
         let tenv =
           Value_slot.Map.fold (fun (vs_from : Value_slot.t) (vs_to : Value_slot.t) tenv ->
+              (* Variable representing the field of unboxed_closure_var *)
               let var_from = Variable.create "from" in
+              (* Variable representing the field of my_closure *)
               let var_to = Variable.create "to" in
               let add_definition tenv function_slot closure_var var vs =
                 let tenv =
@@ -213,7 +218,9 @@ let simplify_function_body context ~outer_dacc function_slot_opt
                 let closure_ty = T.alias_type_of K.value (Simple.var closure_var) in
                 let tenv =
                   match T.meet tenv closure_ty closure_add_ty with
-                  | Bottom -> tenv (* ? *)
+                  | Bottom ->
+                    let _ = assert false in
+                    tenv (* ? *)
                   | Ok (_ty, tee) ->
                     T.Typing_env.add_env_extension tenv tee
                 in
@@ -225,7 +232,9 @@ let simplify_function_body context ~outer_dacc function_slot_opt
                 let ty_to = T.alias_type_of K.value (Simple.var var_to) in
                 let ty_from = T.alias_type_of K.value (Simple.var var_from) in
                 match T.meet tenv ty_to ty_from with
-                | Bottom -> tenv (* ? *)
+                | Bottom ->
+                  let _ = assert false in
+                  tenv (* ? *)
                 | Ok (_ty, tee) ->
                   T.Typing_env.add_env_extension tenv tee
               in
