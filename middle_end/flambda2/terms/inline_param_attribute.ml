@@ -39,7 +39,8 @@ let is_default t =
   | Default_inline -> true
   | Inline_when_known -> false
 
-(* let from_lambda (attr : Lambda.inline_param_attribute) = *)
+let from_lambda (_attr : Lambda.parameter_attribute) =
+  assert false
 (*   match attr with *)
 (*   | Inline_when_known -> Inline_when_known *)
 (*   | Default_inline -> Default_inline *)

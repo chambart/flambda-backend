@@ -1615,24 +1615,38 @@ let boxing_primitive (k : Function_decl.unboxing_kind) alloc_mode
 
 let compute_body_of_unboxed_function acc my_region my_closure
     ~unarized_params:params params_arity ~unarized_param_modes:param_modes
-    function_slot compute_body return return_continuation unboxed_params
-    unboxed_return unboxed_function_slot =
-  let rec box_params params params_arity param_modes params_unboxing body =
-    match params, params_arity, param_modes, params_unboxing with
-    | [], [], [], [] -> [], [], [], body
+    ~unarized_param_inline_attributes:param_inline_attributes function_slot
+    compute_body return return_continuation unboxed_params unboxed_return
+    unboxed_function_slot =
+  let rec box_params params params_arity param_modes param_inline_attributes
+      params_unboxing body =
+    match
+      ( params,
+        params_arity,
+        param_modes,
+        param_inline_attributes,
+        params_unboxing )
+    with
+    | [], [], [], [], [] -> [], [], [], [], body
     | ( param :: params,
         param_arity :: params_arity,
         param_mode :: param_modes,
+        param_inline_attribute :: param_inline_attributes,
         param_unboxing :: params_unboxing ) -> (
-      let main_code_params, main_code_params_arity, main_code_param_modes, body
-          =
-        box_params params params_arity param_modes params_unboxing body
+      let ( main_code_params,
+            main_code_params_arity,
+            main_code_param_modes,
+            main_code_param_inline_attributes,
+            body ) =
+        box_params params params_arity param_modes param_inline_attributes
+          params_unboxing body
       in
       match (param_unboxing : Function_decl.unboxing_kind option) with
       | None ->
         ( param :: main_code_params,
           param_arity :: main_code_params_arity,
           param_mode :: main_code_param_modes,
+          param_inline_attribute :: main_code_param_inline_attributes,
           body )
       | Some k ->
         let boxed_variable_name = Variable.name (Bound_parameter.var param) in
@@ -1659,16 +1673,22 @@ let compute_body_of_unboxed_function acc my_region my_closure
           (* CR ncourant: is this correct in the presence of records with global
              fields? *)
           List.map (fun _ -> param_mode) vars_with_kinds @ main_code_param_modes,
+          List.map (fun _ -> param_inline_attribute) vars_with_kinds
+          @ main_code_param_inline_attributes,
           body ))
-    | ([] | _ :: _), _, _, _ ->
+    | ([] | _ :: _), _, _, _, _ ->
       Misc.fatal_errorf
         "Parameters and unboxed parameters do not have the same length@."
   in
-  let main_code_params, main_code_params_arity, main_code_param_modes, body =
+  let ( main_code_params,
+        main_code_params_arity,
+        main_code_param_modes,
+        main_code_param_inline_attributes,
+        body ) =
     box_params
       (Bound_parameters.to_list params)
       (Flambda_arity.unarize params_arity)
-      param_modes unboxed_params compute_body
+      param_modes param_inline_attributes unboxed_params compute_body
   in
   (* This function is always fully applied, so use a single non-unarized
      parameter to avoid useless currying functions being generated. *)
@@ -1751,6 +1771,7 @@ let compute_body_of_unboxed_function acc my_region my_closure
     Bound_parameters.create main_code_params,
     Flambda_arity.create main_code_params_arity,
     main_code_param_modes,
+    main_code_param_inline_attributes,
     false,
     (* first_complex_local_param = 0, but function should never be partially
        applied anyway *)
@@ -1760,11 +1781,12 @@ let compute_body_of_unboxed_function acc my_region my_closure
     my_unboxed_closure )
 
 let make_unboxed_function_wrapper acc function_slot ~unarized_params:params
-    params_arity ~unarized_param_modes:param_modes return result_arity_main_code
-    code_id main_code_id decl loc external_env recursive cost_metrics dbg
-    is_tupled inlining_decision absolute_history relative_history main_code
-    by_function_slot function_code_ids unboxed_function_slot unboxed_params
-    unboxed_return =
+    params_arity ~unarized_param_modes:param_modes
+    ~unarized_param_inline_attributes:param_inline_attributes return
+    result_arity_main_code code_id main_code_id decl loc external_env recursive
+    cost_metrics dbg is_tupled inlining_decision absolute_history
+    relative_history main_code by_function_slot function_code_ids
+    unboxed_function_slot unboxed_params unboxed_return =
   (* The outside caller gave us the function slot and code ID meant for the
      boxed function, which will be a wrapper. So in this branch everything
      starting with 'main_' refers to the version with unboxed return/params. *)
@@ -1959,6 +1981,7 @@ let make_unboxed_function_wrapper acc function_slot ~unarized_params:params
   let wrapper_code =
     Code.create code_id ~params_and_body:wrapper_params_and_body
       ~free_names_of_params_and_body ~params_arity ~param_modes
+      ~param_inline_attributes
       ~first_complex_local_param:(Function_decl.first_complex_local_param decl)
       ~result_arity:return ~result_types:Unknown
       ~result_mode:(Function_decl.result_mode decl)
@@ -2012,6 +2035,12 @@ let close_one_function acc ~code_id ~external_env ~by_function_slot
   let unarized_param_modes =
     List.map
       (fun (p : Function_decl.param) -> Alloc_mode.For_types.from_lambda p.mode)
+      unarized_params
+  in
+  let unarized_param_inline_attributes =
+    List.map
+      (fun (p : Function_decl.param) ->
+        Inline_param_attribute.from_lambda p.attributes)
       unarized_params
   in
   let return = Function_decl.return decl in
@@ -2233,6 +2262,7 @@ let close_one_function acc ~code_id ~external_env ~by_function_slot
         main_code_unarized_params,
         main_code_params_arity,
         main_code_unarized_param_modes,
+        main_code_unarized_param_inline_attributes,
         main_code_is_tupled,
         first_complex_local_param_main_code,
         result_arity_main_code,
@@ -2246,6 +2276,7 @@ let close_one_function acc ~code_id ~external_env ~by_function_slot
         unarized_params,
         params_arity,
         unarized_param_modes,
+        unarized_param_inline_attributes,
         is_tupled,
         Function_decl.first_complex_local_param decl,
         return,
@@ -2254,8 +2285,9 @@ let close_one_function acc ~code_id ~external_env ~by_function_slot
     | Unboxed_calling_convention
         (unboxed_params, unboxed_return, unboxed_function_slot) ->
       compute_body_of_unboxed_function acc my_region my_closure ~unarized_params
-        params_arity ~unarized_param_modes function_slot compute_body return
-        return_continuation unboxed_params unboxed_return unboxed_function_slot
+        params_arity ~unarized_param_modes ~unarized_param_inline_attributes
+        function_slot compute_body return return_continuation unboxed_params
+        unboxed_return unboxed_function_slot
   in
   let contains_subfunctions = Acc.seen_a_function acc in
   let cost_metrics = Acc.cost_metrics acc in
@@ -2330,6 +2362,7 @@ let close_one_function acc ~code_id ~external_env ~by_function_slot
       ~free_names_of_params_and_body:(Acc.free_names acc)
       ~params_arity:main_code_params_arity
       ~param_modes:main_code_unarized_param_modes
+      ~param_inline_attributes:main_code_unarized_param_inline_attributes
       ~first_complex_local_param:first_complex_local_param_main_code
       ~result_arity:result_arity_main_code ~result_types:Unknown ~result_mode
       ~contains_no_escaping_local_allocs:
@@ -2357,11 +2390,11 @@ let close_one_function acc ~code_id ~external_env ~by_function_slot
     | Unboxed_calling_convention
         (unboxed_params, unboxed_return, unboxed_function_slot) ->
       make_unboxed_function_wrapper acc function_slot ~unarized_params
-        params_arity ~unarized_param_modes return result_arity_main_code code_id
-        main_code_id decl loc external_env recursive cost_metrics dbg is_tupled
-        inlining_decision absolute_history relative_history main_code
-        by_function_slot function_code_ids unboxed_function_slot unboxed_params
-        unboxed_return
+        params_arity ~unarized_param_modes ~unarized_param_inline_attributes
+        return result_arity_main_code code_id main_code_id decl loc external_env
+        recursive cost_metrics dbg is_tupled inlining_decision absolute_history
+        relative_history main_code by_function_slot function_code_ids
+        unboxed_function_slot unboxed_params unboxed_return
   in
   let approx =
     let code = Code_or_metadata.create code in
@@ -2461,6 +2494,12 @@ let close_functions acc external_env ~current_region function_declarations =
               Alloc_mode.For_types.from_lambda p.mode)
             params
         in
+        let param_inline_attributes =
+          List.map
+            (fun (p : Function_decl.param) ->
+              Inline_param_attribute.from_lambda p.attributes)
+            params
+        in
         let result_arity = Function_decl.return decl in
         let poll_attribute =
           Poll_attribute.from_lambda (Function_decl.poll_attribute decl)
@@ -2480,7 +2519,8 @@ let close_functions acc external_env ~current_region function_declarations =
           Code_metadata.create code_id ~params_arity
             ~first_complex_local_param:
               (Function_decl.first_complex_local_param decl)
-            ~param_modes ~result_arity ~result_types:Unknown
+            ~param_modes ~param_inline_attributes ~result_arity
+            ~result_types:Unknown
             ~result_mode:(Function_decl.result_mode decl)
             ~contains_no_escaping_local_allocs:
               (Function_decl.contains_no_escaping_local_allocs decl)

@@ -348,7 +348,8 @@ let simplify_direct_full_application ~simplify_expr dacc apply function_type
 
 let simplify_direct_partial_application ~simplify_expr dacc apply
     ~callee's_code_id ~callee's_code_metadata ~callee's_function_slot
-    ~param_arity ~param_modes ~args_arity ~result_arity ~recursive ~down_to_up
+    ~param_arity ~param_modes ~param_inline_attributes
+    ~args_arity ~result_arity ~recursive ~down_to_up
     ~coming_from_indirect
     ~(closure_alloc_mode_from_type : Alloc_mode.For_types.t) ~apply_alloc_mode
     ~first_complex_local_param =
@@ -463,6 +464,9 @@ let simplify_direct_partial_application ~simplify_expr dacc apply
         in
         let _, remaining_params_alloc_modes =
           Misc.Stdlib.List.split_at (List.length args) param_modes
+        in
+        let _, remaining_param_inline_attributes =
+          Misc.Stdlib.List.split_at (List.length args) param_inline_attributes
         in
         let open struct
           (* An argument or the callee, with information about its entry in the
@@ -625,6 +629,7 @@ let simplify_direct_partial_application ~simplify_expr dacc apply
               ~free_names_of_params_and_body:free_names ~newer_version_of:None
               ~params_arity:remaining_param_arity
               ~param_modes:remaining_params_alloc_modes
+              ~param_inline_attributes:remaining_param_inline_attributes
               ~first_complex_local_param ~result_arity ~result_types:Unknown
               ~result_mode
               ~contains_no_escaping_local_allocs:
@@ -844,6 +849,7 @@ let simplify_direct_function_call ~simplify_expr dacc apply
           ~callee's_code_id ~callee's_code_metadata ~callee's_function_slot
           ~param_arity:params_arity
           ~param_modes:(Code_metadata.param_modes callee's_code_metadata)
+          ~param_inline_attributes:(Code_metadata.param_inline_attributes callee's_code_metadata)
           ~args_arity ~result_arity ~recursive ~down_to_up ~coming_from_indirect
           ~closure_alloc_mode_from_type ~apply_alloc_mode
           ~first_complex_local_param:

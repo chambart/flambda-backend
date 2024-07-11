@@ -917,6 +917,11 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
             (fun _ -> Alloc_mode.For_types.heap)
             (Flambda_arity.unarize params_arity)
         in
+        let param_inline_attributes =
+          List.map
+            (fun _ -> Inline_param_attribute.Default_inline)
+            (Flambda_arity.unarize params_arity)
+        in
         let result_mode =
           match result_mode with
           | Heap -> Lambda.alloc_heap
@@ -926,6 +931,7 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
           (* CR mshinwell: [inlining_decision] should maybe be set properly *)
           Code.create code_id ~params_and_body ~free_names_of_params_and_body
             ~newer_version_of ~params_arity ~param_modes
+            ~param_inline_attributes
             ~first_complex_local_param:(Flambda_arity.num_params params_arity)
             ~result_arity ~result_types:Unknown ~result_mode
             ~contains_no_escaping_local_allocs:false ~stub:false ~inline

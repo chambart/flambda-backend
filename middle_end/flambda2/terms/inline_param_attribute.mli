@@ -26,4 +26,4 @@ val equal : t -> t -> bool
 
 val is_default : t -> bool
 
-(* val from_lambda : Lambda.inline_param_attribute -> t *)
+val from_lambda : Lambda.parameter_attribute -> t
