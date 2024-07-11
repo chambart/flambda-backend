@@ -42,15 +42,19 @@ let make_decision ~inlining_arguments:args ~inline ~param_inline_attributes ~stu
       let can_inline_recursive_functions =
         Flambda_features.Expert.can_inline_recursive_functions ()
       in
+      let no_inline_param_attribute =
+        List.for_all Inline_param_attribute.is_default
+          param_inline_attributes
+      in
       if is_recursive && (not should_unroll)
          && not can_inline_recursive_functions
+         && no_inline_param_attribute
       then Recursive
       else if is_a_functor
       then Functor { size }
       else if is_large
               && (not (Inline_attribute.equal inline Available_inline))
-              && List.for_all Inline_param_attribute.is_default
-                   param_inline_attributes
+              && no_inline_param_attribute
       then Function_body_too_large large_function_size
       else if is_small
       then
