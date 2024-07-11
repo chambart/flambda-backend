@@ -698,6 +698,7 @@ type scoped_location = Debuginfo.Scoped_location.t
 
 type parameter_attribute = {
   unbox_param: bool;
+  inline_when_known: bool;
 }
 
 type lparam = {
@@ -933,7 +934,7 @@ let default_function_attribute = {
 let default_stub_attribute =
   { default_function_attribute with stub = true; zero_alloc = Default_zero_alloc }
 
-let default_param_attribute = { unbox_param = false }
+let default_param_attribute = { unbox_param = false; inline_when_known = false }
 
 (* Build sharing keys *)
 (*

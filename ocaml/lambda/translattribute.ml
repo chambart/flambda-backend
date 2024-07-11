@@ -52,6 +52,9 @@ let is_opaque_attribute =
 let is_unboxable_attribute =
   [ ["unboxable"; "ocaml.unboxable"], true ]
 
+let inline_when_known_attribute =
+  [ ["inline_when_known"; "ocaml.inline_when_known"], true ]
+
 let is_unrolled = function
   | {txt="unrolled"|"ocaml.unrolled"} -> true
   | {txt="inline"|"ocaml.inline"|"inlined"|"ocaml.inlined"} -> false
@@ -466,4 +469,7 @@ let transl_param_attributes pat =
   let unbox_param =
     Option.is_some (find_attribute is_unboxable_attribute attrs)
   in
-  { unbox_param }
+  let inline_when_known =
+    Option.is_some (find_attribute inline_when_known_attribute attrs)
+  in
+  { unbox_param; inline_when_known }

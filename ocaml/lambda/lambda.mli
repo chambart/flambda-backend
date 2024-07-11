@@ -614,6 +614,7 @@ type function_attribute = {
 
 type parameter_attribute = {
   unbox_param: bool;
+  inline_when_known: bool;
 }
 
 type lparam = {
