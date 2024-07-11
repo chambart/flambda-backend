@@ -14,8 +14,8 @@
 (*                                                                        *)
 (**************************************************************************)
 
-let make_decision ~inlining_arguments:args ~inline ~stub ~cost_metrics:metrics
-    ~is_a_functor ~(recursive : Recursive.t) :
+let make_decision ~inlining_arguments:args ~inline ~param_inline_attributes ~stub
+    ~cost_metrics:metrics ~is_a_functor ~(recursive : Recursive.t) :
     Function_decl_inlining_decision_type.t =
   (* At present, we follow Closure, taking inlining decisions without first
      examining call sites. *)
@@ -47,7 +47,10 @@ let make_decision ~inlining_arguments:args ~inline ~stub ~cost_metrics:metrics
       then Recursive
       else if is_a_functor
       then Functor { size }
-      else if is_large && not (Inline_attribute.equal inline Available_inline)
+      else if is_large
+              && (not (Inline_attribute.equal inline Available_inline))
+              && List.for_all Inline_param_attribute.is_default
+                   param_inline_attributes
       then Function_body_too_large large_function_size
       else if is_small
       then

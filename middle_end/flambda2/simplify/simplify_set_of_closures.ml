@@ -385,7 +385,9 @@ let simplify_function0 context ~outer_dacc function_slot_opt code_id code
   let inlining_decision =
     let decision =
       Function_decl_inlining_decision.make_decision ~inlining_arguments
-        ~inline:(Code.inline code) ~stub:(Code.stub code) ~cost_metrics
+        ~inline:(Code.inline code)
+        ~param_inline_attributes:(Code.param_inline_attributes code)
+        ~stub:(Code.stub code) ~cost_metrics
         ~is_a_functor:(Code.is_a_functor code) ~recursive
     in
     Inlining_report.record_decision_at_function_definition ~absolute_history

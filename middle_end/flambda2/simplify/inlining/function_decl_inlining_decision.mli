@@ -17,6 +17,7 @@
 val make_decision :
   inlining_arguments:Inlining_arguments.t ->
   inline:Inline_attribute.t ->
+  param_inline_attributes:Inline_param_attribute.t list ->
   stub:bool ->
   cost_metrics:Cost_metrics.t ->
   is_a_functor:bool ->
