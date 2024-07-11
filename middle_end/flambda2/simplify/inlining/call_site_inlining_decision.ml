@@ -284,7 +284,14 @@ let make_decision dacc ~simplify_expr ~function_type ~apply ~return_arity :
               Flambda_features.Inlining.max_rec_depth
                 (Round (DE.round (DA.denv dacc)))
             in
-            if Simplify_rec_info_expr.depth_may_exceed dacc rec_info
+            let argument_types_useful_on_inline_param =
+              argument_types_useful_on_inline_param dacc apply
+                (Code_metadata.param_inline_attributes
+                   (Code_or_metadata.code_metadata code_or_metadata))
+            in
+            if argument_types_useful_on_inline_param then
+              Attribute_on_known_param
+            else if Simplify_rec_info_expr.depth_may_exceed dacc rec_info
                  max_rec_depth
             then Recursion_depth_exceeded
             else
