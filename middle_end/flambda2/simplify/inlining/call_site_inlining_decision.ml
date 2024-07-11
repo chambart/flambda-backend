@@ -125,6 +125,11 @@ let speculative_inlining dacc ~apply ~function_type ~simplify_expr ~return_arity
   in
   UA.cost_metrics uacc
 
+let argument_types_useful_on_inline_param dacc apply param_inline_attributes =
+  (* TODO *)
+  ignore (dacc, apply, param_inline_attributes);
+  false
+
 let argument_types_useful dacc apply =
   if not
        (Flambda_features.Inlining.speculative_inlining_only_if_arguments_useful
@@ -145,10 +150,8 @@ let might_inline dacc ~apply ~code_or_metadata ~function_type ~simplify_expr
     ~return_arity : Call_site_inlining_decision_type.t =
   let denv = DA.denv dacc in
   let env_prohibits_inlining = not (DE.can_inline denv) in
-  let decision =
-    Code_or_metadata.code_metadata code_or_metadata
-    |> Code_metadata.inlining_decision
-  in
+  let code_metadata = Code_or_metadata.code_metadata code_or_metadata in
+  let decision = Code_metadata.inlining_decision code_metadata in
   if Function_decl_inlining_decision_type.must_be_inlined decision
   then
     Definition_says_inline
@@ -159,6 +162,9 @@ let might_inline dacc ~apply ~code_or_metadata ~function_type ~simplify_expr
   then Definition_says_not_to_inline
   else if env_prohibits_inlining
   then Environment_says_never_inline
+  else if argument_types_useful_on_inline_param dacc apply
+            (Code_metadata.param_inline_attributes code_metadata)
+  then Attribute_on_known_param
   else if not (argument_types_useful dacc apply)
   then Argument_types_not_useful
   else

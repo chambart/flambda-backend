@@ -39,6 +39,7 @@ type t =
         threshold : float
       }
   | Attribute_always
+  | Attribute_on_known_param
   | Begin_unrolling of int
   | Continue_unrolling
   | Definition_says_inline of { was_inline_always : bool }
@@ -67,6 +68,8 @@ let [@ocamlformat "disable"] print ppf t =
     Format.fprintf ppf "Never_inlined_attribute"
   | Attribute_always ->
     Format.fprintf ppf "Attribute_always"
+  | Attribute_on_known_param ->
+    Format.fprintf ppf "Attribute_on_known_param"
   | Definition_says_inline { was_inline_always } ->
     Format.fprintf ppf
       "@[<hov 1>(Definition_says_inline@ \
@@ -138,6 +141,8 @@ let can_inline (t : t) : can_inline =
     Inline { unroll_to = None; was_inline_always }
   | Speculatively_inline _ ->
     Inline { unroll_to = None; was_inline_always = false }
+  | Attribute_on_known_param ->
+    Inline { unroll_to = None; was_inline_always = false }
   | Attribute_always -> Inline { unroll_to = None; was_inline_always = true }
 
 let report_reason fmt t =
@@ -162,6 +167,11 @@ let report_reason fmt t =
     Format.fprintf fmt "the@ maximum@ recursion@ depth@ has@ been@ exceeded"
   | Never_inlined_attribute ->
     Format.fprintf fmt "the@ call@ has@ an@ attribute@ forbidding@ inlining"
+  | Attribute_on_known_param ->
+    Format.fprintf fmt
+      "this@ function@ was@ decided@ to@ be@ inlined@ at@ its@ \
+       definition@ site@ when@ its@ parameter@ is@ known@ \
+      (annotated@ by@ [@inline_when_known])"
   | Attribute_always ->
     Format.fprintf fmt "the@ call@ has@ an@ [@@inline always]@ attribute"
   | Begin_unrolling n ->

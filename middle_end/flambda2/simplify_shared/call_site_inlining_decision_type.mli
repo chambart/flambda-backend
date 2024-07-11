@@ -32,6 +32,7 @@ type t =
         threshold : float
       }
   | Attribute_always
+  | Attribute_on_known_param
   | Begin_unrolling of int
   | Continue_unrolling
   | Definition_says_inline of { was_inline_always : bool }
