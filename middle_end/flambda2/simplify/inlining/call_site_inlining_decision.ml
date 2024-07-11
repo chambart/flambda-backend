@@ -129,7 +129,10 @@ let known_type typing_env (ty : Flambda2_types.t) =
   match prove_unique_tag_and_size typing_env ty with
   | Proved _ -> true
   | Unknown ->
-    false
+    match prove_single_closures_entry typing_env ty with
+    | Proved _ -> true
+    | Unknown ->
+      false
 
 let argument_types_useful_on_inline_param dacc apply param_inline_attributes =
   let typing_env = DE.typing_env (DA.denv dacc) in
