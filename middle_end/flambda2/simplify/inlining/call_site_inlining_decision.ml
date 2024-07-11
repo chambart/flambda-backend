@@ -125,10 +125,25 @@ let speculative_inlining dacc ~apply ~function_type ~simplify_expr ~return_arity
   in
   UA.cost_metrics uacc
 
+let known_type typing_env (ty : Flambda2_types.t) =
+  match prove_unique_tag_and_size typing_env ty with
+  | Proved _ -> true
+  | Unknown ->
+    false
+
 let argument_types_useful_on_inline_param dacc apply param_inline_attributes =
-  (* TODO *)
-  ignore (dacc, apply, param_inline_attributes);
-  false
+  let typing_env = DE.typing_env (DA.denv dacc) in
+  List.exists2
+    (fun (attribute : Inline_param_attribute.t) simple ->
+      match attribute with
+      | Default_inline -> false
+      | Inline_when_known ->
+        Simple.pattern_match simple
+          ~name:(fun name ~coercion:_ ->
+            let ty = TE.find typing_env name None in
+            known_type typing_env ty)
+          ~const:(fun _ -> true))
+    param_inline_attributes (Apply.args apply)
 
 let argument_types_useful dacc apply =
   if not
