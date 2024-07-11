@@ -517,22 +517,15 @@ let close_c_call acc env ~loc ~let_bound_ids_with_kinds
              (fun var -> Named.create_simple (Simple.var var))
              let_bound_vars))
   in
-  let alloc_mode_app =
+  let alloc_mode, alloc_mode_app =
     match Lambda.alloc_mode_of_primitive_description prim_desc with
     | None ->
       (* This happens when stack allocation is disabled. *)
-      Alloc_mode.For_applications.heap
+      Alloc_mode.For_allocations.heap, Alloc_mode.For_applications.heap
     | Some alloc_mode ->
-      Alloc_mode.For_applications.from_lambda alloc_mode ~current_region
-        ~current_ghost_region
-  in
-  let alloc_mode =
-    match Lambda.alloc_mode_of_primitive_description prim_desc with
-    | None ->
-      (* This happens when stack allocation is disabled. *)
-      Alloc_mode.For_allocations.heap
-    | Some alloc_mode ->
-      Alloc_mode.For_allocations.from_lambda alloc_mode ~current_region
+      ( Alloc_mode.For_allocations.from_lambda alloc_mode ~current_region,
+        Alloc_mode.For_applications.from_lambda alloc_mode ~current_region
+          ~current_ghost_region )
   in
   let box_return_value =
     match prim_native_repr_res with
