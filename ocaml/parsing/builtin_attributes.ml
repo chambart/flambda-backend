@@ -110,6 +110,7 @@ let builtin_attrs =
   ; "error_message"; "ocaml.error_message"
   ; "layout_poly"; "ocaml.layout_poly"
   ; "no_mutable_implied_modalities"; "ocaml.no_mutable_implied_modalities"
+  ; "inline_when_known"; "ocaml.inline_when_known"
   ]
 
 (* nroberts: When we upstream the builtin-attribute whitelisting, we shouldn't

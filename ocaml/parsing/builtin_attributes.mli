@@ -36,6 +36,7 @@
       - ocaml.void
       - ocaml.immediate
       - ocaml.immediate64
+    - ocaml.inline_when_known
 
     {b Warning:} this module is unstable and part of
   {{!Compiler_libs}compiler-libs}.
