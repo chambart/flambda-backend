@@ -53,7 +53,7 @@ let is_unboxable_attribute =
   [ ["unboxable"; "ocaml.unboxable"], true ]
 
 let inline_when_known_attribute =
-  [ ["inline_when_known"; "ocaml.inline_when_known"], true ]
+  [ ["inline_when_known"; "ocaml.inline_when_known"], Config.flambda2 ]
 
 let is_unrolled = function
   | {txt="unrolled"|"ocaml.unrolled"} -> true
@@ -466,10 +466,42 @@ let add_function_attributes lam loc attr =
 
 let transl_param_attributes pat =
   let attrs = pat.pat_attributes in
+  let env = pat.pat_env in
+  let typ = pat.pat_type in
   let unbox_param =
     Option.is_some (find_attribute is_unboxable_attribute attrs)
   in
   let inline_when_known =
-    Option.is_some (find_attribute inline_when_known_attribute attrs)
+    match find_attribute inline_when_known_attribute attrs with
+    | None -> false
+    | Some attribute ->
+        Format.printf "Type: %a@." Printtyp.type_expr typ;
+        match attribute.attr_payload with
+        | PPat (pattern, _when) -> begin
+            match pattern.ppat_desc, Types.get_desc pat.pat_type with
+            | Ppat_any, _ -> true
+            | Ppat_record (pat_fields, _), Tconstr (path, _, _) -> begin
+                let description = Env.find_type_descrs path env in
+                match description with
+                | Type_record (type_fields, _) ->
+                    List.iter (fun (field, _) ->
+                  Format.printf "Field: %a@." Pprintast.longident field.txt
+                    ) pat_fields;
+                  List.iter (fun (field : Types.label_description) ->
+                  Format.printf "Type field: %s %i@." field.lbl_name field.lbl_pos
+                    ) type_fields;
+                  true
+                | _ ->
+                  Format.eprintf "Not a record@.";
+                  true
+            end
+            | Ppat_record _, _ ->
+                Format.eprintf "Mismatching attribute@.";
+                true
+            | _ -> true
+          end
+        | _ ->
+            Format.eprintf "Other payload@.";
+            true
   in
   { unbox_param; inline_when_known }
