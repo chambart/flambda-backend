@@ -58,9 +58,9 @@ module P = struct
       [Code_id_or_name.name target]
     | Graph.Dep.Use { target } | Graph.Dep.Constructor { target; _ } -> [target]
     | Graph.Dep.Alias_if_def { target; if_defined } ->
-      [Code_id_or_name.name target; Code_id_or_name.code_id if_defined]
+      [Code_id_or_name.name target; if_defined]
     | Graph.Dep.Propagate { target; source } ->
-      [Code_id_or_name.name target; Code_id_or_name.name source]
+      [Code_id_or_name.name target; source]
 
   let all_names t =
     let names = Hashtbl.create 100 in

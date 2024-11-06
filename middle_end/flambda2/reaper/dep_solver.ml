@@ -393,11 +393,11 @@ module Graph = struct
     | Accessor _ -> false
     | Constructor _ -> true
     | Alias_if_def { if_defined; _ } -> (
-      match Hashtbl.find_opt uses (Code_id_or_name.code_id if_defined) with
+      match Hashtbl.find_opt uses (if_defined) with
       | None | Some Bottom -> false
       | Some (Fields _ | Top) -> true)
     | Propagate { source; _ } -> (
-      match Hashtbl.find_opt uses (Code_id_or_name.name source) with
+      match Hashtbl.find_opt uses (source) with
       | None | Some (Bottom | Fields _) -> false
       | Some Top -> true)
 

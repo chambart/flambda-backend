@@ -60,13 +60,13 @@ module Dep : sig
        source, since a block has multiple fields for instance *)
     | Alias_if_def of
         { target : Name.t;
-          if_defined : Code_id.t
+          if_defined : Code_id_or_name.t
         }
     (* If [if_defined] is not bottom, then this is equivalent to an alias to
        [target] *)
     | Propagate of
         { target : Name.t;
-          source : Name.t
+          source : Code_id_or_name.t
         }
   (* If the source this not bottom, then [source] is an alias to [target]
      (counterpart of [Alias_if_def], always generated in pairs) *)

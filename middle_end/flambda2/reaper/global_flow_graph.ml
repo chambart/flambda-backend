@@ -124,11 +124,11 @@ module Dep = struct
           }
       | Alias_if_def of
           { target : Name.t;
-            if_defined : Code_id.t
+            if_defined : Code_id_or_name.t
           }
       | Propagate of
           { target : Name.t;
-            source : Name.t
+            source : Code_id_or_name.t
           }
 
     let compare t1 t2 =
@@ -156,11 +156,11 @@ module Dep = struct
       | ( Alias_if_def { target = target1; if_defined = if_defined1 },
           Alias_if_def { target = target2; if_defined = if_defined2 } ) ->
         let c = Name.compare target1 target2 in
-        if c <> 0 then c else Code_id.compare if_defined1 if_defined2
+        if c <> 0 then c else Code_id_or_name.compare if_defined1 if_defined2
       | ( Propagate { target = target1; source = source1 },
           Propagate { target = target2; source = source2 } ) ->
         let c = Name.compare target1 target2 in
-        if c <> 0 then c else Name.compare source1 source2
+        if c <> 0 then c else Code_id_or_name.compare source1 source2
       | ( ( Alias _ | Use _ | Accessor _ | Constructor _ | Alias_if_def _
           | Propagate _ ),
           _ ) ->
@@ -181,10 +181,10 @@ module Dep = struct
         Format.fprintf ppf "Constructor %a %a" Field.print relation
           Code_id_or_name.print target
       | Alias_if_def { target; if_defined } ->
-        Format.fprintf ppf "Alias_if_def %a %a" Name.print target Code_id.print
+        Format.fprintf ppf "Alias_if_def %a %a" Name.print target Code_id_or_name.print
           if_defined
       | Propagate { target; source } ->
-        Format.fprintf ppf "Propagate %a %a" Name.print target Name.print source
+        Format.fprintf ppf "Propagate %a %a" Name.print target Code_id_or_name.print source
   end
 
   include M

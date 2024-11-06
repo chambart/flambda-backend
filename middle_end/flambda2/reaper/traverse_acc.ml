@@ -267,10 +267,10 @@ let deps t =
         | Some code_id ->
           Graph.add_dep t.deps
             (Code_id_or_name.name param)
-            (Graph.Dep.Alias_if_def { target = name; if_defined = code_id });
+            (Graph.Dep.Alias_if_def { target = name; if_defined = Code_id_or_name.code_id code_id });
           Graph.add_dep t.deps
             (Code_id_or_name.code_id code_id)
-            (Graph.Dep.Propagate { target = name; source = param })
+            (Graph.Dep.Propagate { target = name; source = Code_id_or_name.name param })
       in
       List.iter2
         (fun param arg ->
