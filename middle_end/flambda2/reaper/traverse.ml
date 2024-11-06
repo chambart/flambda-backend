@@ -71,6 +71,18 @@ let prepare_code ~denv acc (code_id : Code_id.t) (code : Code.t) =
       indirect_call_witness;
     }
   in
+  Acc.record_dep ~denv indirect_call_witness (Use { target = Code_id_or_name.code_id code_id }) acc;
+    let le_monde_exterieur = denv.le_monde_exterieur in
+    List.iter (fun param ->
+      let param = Code_id_or_name.var param in
+          Acc.record_dep ~denv param
+            (Graph.Dep.Alias_if_def { target = le_monde_exterieur; if_defined = indirect_call_witness }) acc;
+          Acc.record_dep ~denv
+            indirect_call_witness
+            (Graph.Dep.Propagate { target = le_monde_exterieur; source = param }) acc)
+      params
+    ;
+
   if has_unsafe_result_type
   then
     List.iter
