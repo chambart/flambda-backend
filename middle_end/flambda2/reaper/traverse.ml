@@ -37,7 +37,7 @@ let prepare_code ~denv acc (code_id : Code_id.t) (code : Code.t) =
       (Flambda_arity.cardinal_unarized (Code.result_arity code))
       (fun i ->
         Variable.create
-          (Format.asprintf "function_return_%i_%a" i Code_id.print code_id))
+          (Format.asprintf "function_return_%i_%s" i (Code_id.name code_id)))
   in
   let exn = Variable.create "function_exn" in
   let my_closure = Variable.create "my_closure" in
