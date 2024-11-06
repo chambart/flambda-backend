@@ -58,13 +58,17 @@ let prepare_code ~denv acc (code_id : Code_id.t) (code : Code.t) =
     | Assume _ -> false
     | Check _ -> true
   in
+  let indirect_call_witness =
+        Code_id_or_name.var
+          (Variable.create (Printf.sprintf "witness_for_%s" (Code_id.name code_id))) in
   let code_dep =
     { Traverse_acc.arity;
       return;
       my_closure;
       exn;
       params;
-      is_tupled = Code.is_tupled code
+      is_tupled = Code.is_tupled code;
+      indirect_call_witness;
     }
   in
   if has_unsafe_result_type

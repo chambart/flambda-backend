@@ -37,7 +37,8 @@ type code_dep =
     my_closure : Variable.t;
     return : Variable.t list; (* Dummy variable representing return value *)
     exn : Variable.t; (* Dummy variable representing exn return value *)
-    is_tupled : bool
+    is_tupled : bool;
+    indirect_call_witness : Code_id_or_name.t;
   }
 
 type apply_dep =
@@ -222,7 +223,7 @@ let record_set_of_closure_deps t =
           Graph.add_dep t.deps !acc
             (Constructor
                { relation = Code_of_closure;
-                 target = Code_id_or_name.code_id code_id
+                 target = code_dep.indirect_call_witness
                });
           acc := tmp_name
         done;
@@ -242,7 +243,7 @@ let record_set_of_closure_deps t =
         Graph.add_dep t.deps !acc
           (Constructor
              { relation = Code_of_closure;
-               target = Code_id_or_name.code_id code_id
+               target = code_dep.indirect_call_witness
              }))
     t.set_of_closures_dep
 

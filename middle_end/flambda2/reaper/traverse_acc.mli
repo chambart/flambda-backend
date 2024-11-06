@@ -37,7 +37,8 @@ type code_dep =
     my_closure : Variable.t;
     return : Variable.t list; (* Dummy variable representing return value *)
     exn : Variable.t; (* Dummy variable representing exn return value *)
-    is_tupled : bool
+    is_tupled : bool;
+    indirect_call_witness : Code_id_or_name.t;
   }
 
 type apply_dep =
