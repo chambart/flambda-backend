@@ -20,7 +20,10 @@ type field_elt =
 
 type elt =
   | Top
-  | Fields of field_elt Global_flow_graph.Field.Map.t
+  | Fields of
+      { uses : field_elt Global_flow_graph.Field.Map.t;
+        aliases_of_this : Code_id_or_name.Set.t
+      }
   | Bottom
 
 type result = (Code_id_or_name.t, elt) Hashtbl.t

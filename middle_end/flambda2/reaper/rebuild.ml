@@ -190,7 +190,7 @@ let rewrite_set_of_closures bound (env : env) value_slots alloc_mode
         with
         | None | Some Bottom -> false
         | Some Top -> true
-        | Some (Fields f) -> Global_flow_graph.Field.Map.mem slot f)
+        | Some (Fields f) -> Global_flow_graph.Field.Map.mem slot f.uses)
       bound
   in
   let code_is_used bv =
@@ -199,7 +199,7 @@ let rewrite_set_of_closures bound (env : env) value_slots alloc_mode
     with
     | None | Some Bottom -> false
     | Some Top -> true
-    | Some (Fields f) -> Global_flow_graph.Field.Map.mem Code_of_closure f
+    | Some (Fields f) -> Global_flow_graph.Field.Map.mem Code_of_closure f.uses
   in
   let value_slots =
     Value_slot.Map.filter
