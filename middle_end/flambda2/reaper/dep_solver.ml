@@ -436,6 +436,18 @@ let pp_result ppf (res : result) =
   in
   Format.fprintf ppf "@[<hov 2>{@ %a@ }@]" pp elts
 
+let cannot_unbox _id elt =
+  match elt with
+  | Top -> true
+  | Bottom -> true
+  | Fields fields ->
+    Field.Map.exists
+      (fun (field : Field.t) _ ->
+        match[@ocaml.warning "-4"] field with
+        | Code_of_closure | Apply _ -> true
+        | _ -> false)
+      fields.uses
+
 let fixpoint (graph_new : Global_flow_graph.graph) =
   let result = Hashtbl.create 17 in
   let uses =
@@ -444,4 +456,10 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
   in
   Solver.fixpoint_topo graph_new uses result;
   Solver.check_fixpoint graph_new uses result;
+  Hashtbl.iter
+    (fun code_or_name elt ->
+      if not (cannot_unbox code_or_name elt)
+      then
+        Format.printf "%a => %a@." Code_id_or_name.print code_or_name pp_elt elt)
+    result;
   result
