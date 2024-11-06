@@ -190,7 +190,7 @@ and traverse_let denv acc let_expr : rev_expr =
         Static_const_group.match_against_bound_static group bound_static
           ~init:[]
           ~code:(fun rev_group code_id code ->
-            let code = traverse_code acc code_id code in
+            let code = traverse_code acc code_id code ~le_monde_exterieur:denv.le_monde_exterieur in
             Code code :: rev_group)
           ~deleted_code:(fun rev_group _ -> Deleted_code :: rev_group)
           ~set_of_closures:(fun rev_group ~closure_symbols:_ set_of_closures ->
@@ -211,7 +211,8 @@ and traverse_let denv acc let_expr : rev_expr =
   traverse
     { parent = let_acc;
       conts = denv.conts;
-      current_code_id = denv.current_code_id
+      current_code_id = denv.current_code_id;
+      le_monde_exterieur = denv.le_monde_exterieur;
     }
     acc body
 
@@ -382,13 +383,15 @@ and traverse_let_cont_non_recursive denv acc cont ~body handler =
     let denv =
       { parent = Let_cont { cont; handler; parent = denv.parent };
         conts;
-        current_code_id = denv.current_code_id
+        current_code_id = denv.current_code_id;
+        le_monde_exterieur = denv.le_monde_exterieur;
       }
     in
     traverse denv acc body
   in
   traverse_cont_handler
-    { parent = Up; conts = denv.conts; current_code_id = denv.current_code_id }
+    { parent = Up; conts = denv.conts; current_code_id = denv.current_code_id;
+      le_monde_exterieur = denv.le_monde_exterieur; }
     acc cont_handler traverse
 
 and traverse_let_cont_recursive denv acc ~invariant_params ~body handlers =
@@ -424,7 +427,8 @@ and traverse_let_cont_recursive denv acc ~invariant_params ~body handlers =
         let is_cold = Continuation_handler.is_cold cont_handler in
         let expr =
           traverse
-            { parent = Up; conts; current_code_id = denv.current_code_id }
+            { parent = Up; conts; current_code_id = denv.current_code_id;
+              le_monde_exterieur = denv.le_monde_exterieur; }
             acc handler
         in
         let handler = { bound_parameters; expr; is_exn_handler; is_cold } in
@@ -434,7 +438,8 @@ and traverse_let_cont_recursive denv acc ~invariant_params ~body handlers =
   let denv =
     { parent = Let_cont_rec { invariant_params; handlers; parent = denv.parent };
       conts;
-      current_code_id = denv.current_code_id
+      current_code_id = denv.current_code_id;
+      le_monde_exterieur = denv.le_monde_exterieur;
     }
   in
   traverse denv acc body
@@ -617,7 +622,7 @@ and traverse_invalid denv _acc ~message =
   let expr = Invalid { message } in
   { expr; holed_expr = denv.parent }
 
-and traverse_code (acc : acc) (code_id : Code_id.t) (code : Code.t) : rev_code =
+and traverse_code (acc : acc) (code_id : Code_id.t) (code : Code.t) ~le_monde_exterieur : rev_code =
   let params_and_body = Code.params_and_body code in
   Function_params_and_body.pattern_match params_and_body
     ~f:(fun
@@ -634,10 +639,10 @@ and traverse_code (acc : acc) (code_id : Code_id.t) (code : Code.t) : rev_code =
        ->
       traverse_function_params_and_body acc code_id code ~return_continuation
         ~exn_continuation params ~body ~my_closure ~my_region ~my_ghost_region
-        ~my_depth)
+        ~my_depth ~le_monde_exterieur)
 
 and traverse_function_params_and_body acc code_id code ~return_continuation
-    ~exn_continuation params ~body ~my_closure ~my_region ~my_ghost_region
+    ~exn_continuation params ~body ~my_closure ~my_region ~my_ghost_region ~le_monde_exterieur
     ~my_depth : rev_code =
   let code_metadata = Code.code_metadata code in
   let free_names_of_params_and_body = Code0.free_names code in
@@ -659,7 +664,8 @@ and traverse_function_params_and_body acc code_id code ~return_continuation
     { is_exn_handler = true; params = [exn] };
   Acc.fixed_arity_continuation acc return_continuation;
   Acc.fixed_arity_continuation acc exn_continuation;
-  let denv = { parent = Up; conts; current_code_id = Some code_id } in
+  let denv = { parent = Up; conts; current_code_id = Some code_id;
+      le_monde_exterieur = le_monde_exterieur; } in
   if is_opaque
   then List.iter (fun v -> Acc.used ~denv (Simple.var v) acc) (exn :: return);
   Bound_parameters.iter (fun bp -> Acc.bound_parameter_kind bp acc) params;
@@ -710,6 +716,7 @@ type result =
 
 let run (unit : Flambda_unit.t) =
   let acc = Acc.create () in
+  let le_monde_exterieur = Symbol.create (Compilation_unit.get_current_exn ()) (Linkage_name.of_string "le_monde_extérieur") in
   let create_holed () =
     let dummy_toplevel_return = Variable.create "dummy_toplevel_return" in
     let dummy_toplevel_exn = Variable.create "dummy_toplevel_exn" in
@@ -729,7 +736,7 @@ let run (unit : Flambda_unit.t) =
     Acc.fixed_arity_continuation acc return_continuation;
     Acc.fixed_arity_continuation acc exn_continuation;
     traverse
-      { parent = Up; conts; current_code_id = None }
+      { parent = Up; conts; current_code_id = None; le_monde_exterieur = Name.symbol le_monde_exterieur }
       acc (Flambda_unit.body unit)
   in
   let holed = Profile.record_call ~accumulate:false "down" create_holed in
