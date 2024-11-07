@@ -59,8 +59,9 @@ let prepare_code ~denv acc (code_id : Code_id.t) (code : Code.t) =
     | Check _ -> true
   in
   let indirect_call_witness =
-        Code_id_or_name.var
-          (Variable.create (Printf.sprintf "witness_for_%s" (Code_id.name code_id))) in
+    Code_id_or_name.var
+      (Variable.create (Printf.sprintf "witness_for_%s" (Code_id.name code_id)))
+  in
   let code_dep =
     { Traverse_acc.arity;
       return;
@@ -68,21 +69,24 @@ let prepare_code ~denv acc (code_id : Code_id.t) (code : Code.t) =
       exn;
       params;
       is_tupled = Code.is_tupled code;
-      indirect_call_witness;
+      indirect_call_witness
     }
   in
-  Acc.record_dep indirect_call_witness (Use { target = Code_id_or_name.code_id code_id }) acc;
-    let le_monde_exterieur = denv.le_monde_exterieur in
-    List.iter (fun param ->
+  Acc.record_dep indirect_call_witness
+    (Use { target = Code_id_or_name.code_id code_id })
+    acc;
+  let le_monde_exterieur = denv.le_monde_exterieur in
+  List.iter
+    (fun param ->
       let param = Code_id_or_name.var param in
-          Acc.record_dep param
-            (Graph.Dep.Alias_if_def { target = le_monde_exterieur; if_defined = indirect_call_witness }) acc;
-          Acc.record_dep
-            indirect_call_witness
-            (Graph.Dep.Propagate { target = le_monde_exterieur; source = param }) acc)
-      params
-    ;
-
+      Acc.record_dep param
+        (Graph.Dep.Alias_if_def
+           { target = le_monde_exterieur; if_defined = indirect_call_witness })
+        acc;
+      Acc.record_dep indirect_call_witness
+        (Graph.Dep.Propagate { target = le_monde_exterieur; source = param })
+        acc)
+    params;
   if has_unsafe_result_type
   then
     List.iter
@@ -193,7 +197,8 @@ and traverse_let denv acc let_expr : rev_expr =
     Simple.pattern_match s
       ~name:(fun name ~coercion:_ -> default_bp acc (Alias { target = name }))
       ~const:(fun _ ->
-          default_bp acc (Use { target = Code_id_or_name.name denv.all_constants }))
+        default_bp acc
+          (Use { target = Code_id_or_name.name denv.all_constants }))
   | Rec_info _ -> default acc);
   let named : rev_named =
     match defining_expr with
@@ -213,7 +218,11 @@ and traverse_let denv acc let_expr : rev_expr =
         Static_const_group.match_against_bound_static group bound_static
           ~init:[]
           ~code:(fun rev_group code_id code ->
-            let code = traverse_code acc code_id code ~le_monde_exterieur:denv.le_monde_exterieur ~all_constants:denv.all_constants in
+            let code =
+              traverse_code acc code_id code
+                ~le_monde_exterieur:denv.le_monde_exterieur
+                ~all_constants:denv.all_constants
+            in
             Code code :: rev_group)
           ~deleted_code:(fun rev_group _ -> Deleted_code :: rev_group)
           ~set_of_closures:(fun rev_group ~closure_symbols:_ set_of_closures ->
@@ -236,7 +245,7 @@ and traverse_let denv acc let_expr : rev_expr =
       conts = denv.conts;
       current_code_id = denv.current_code_id;
       le_monde_exterieur = denv.le_monde_exterieur;
-      all_constants = denv.all_constants;
+      all_constants = denv.all_constants
     }
     acc body
 
@@ -259,10 +268,11 @@ and traverse_prim denv acc ~bound_pattern (prim : Flambda_primitive.t) ~default
               (Constructor
                  { relation = Block i; target = Code_id_or_name.name name }))
           ~const:(fun _ ->
-                      default_bp acc
+            default_bp acc
               (Constructor
-                 { relation = Block i; target = Code_id_or_name.name denv.all_constants })
-          ))
+                 { relation = Block i;
+                   target = Code_id_or_name.name denv.all_constants
+                 })))
       fields
   | Unary (Project_function_slot { move_from = _; move_to }, block) ->
     let block =
@@ -298,7 +308,9 @@ and traverse_prim denv acc ~bound_pattern (prim : Flambda_primitive.t) ~default
          *)
         default_bp acc
           (Accessor
-             { relation = Block (Targetint_31_63.to_int field); target = denv.all_constants }))
+             { relation = Block (Targetint_31_63.to_int field);
+               target = denv.all_constants
+             }))
       ~name:(fun block ~coercion:_ ->
         default_bp acc
           (Accessor
@@ -308,15 +320,15 @@ and traverse_prim denv acc ~bound_pattern (prim : Flambda_primitive.t) ~default
       ~name:(fun name ~coercion:_ ->
         default_bp acc (Accessor { relation = Is_int; target = name }))
       ~const:(fun _ ->
-        default_bp acc (Use { target = Code_id_or_name.name denv.all_constants })
-      )
+        default_bp acc
+          (Use { target = Code_id_or_name.name denv.all_constants }))
   | Unary (Get_tag, arg) ->
     Simple.pattern_match arg
       ~name:(fun name ~coercion:_ ->
         default_bp acc (Accessor { relation = Get_tag; target = name }))
       ~const:(fun _ ->
-        default_bp acc (Use { target = Code_id_or_name.name denv.all_constants })
-      )
+        default_bp acc
+          (Use { target = Code_id_or_name.name denv.all_constants }))
   | prim ->
     let () =
       match Flambda_primitive.effects_and_coeffects prim with
@@ -327,7 +339,8 @@ and traverse_prim denv acc ~bound_pattern (prim : Flambda_primitive.t) ~default
           ~init:()
       | _ -> ()
     in
-    default_bp acc (Use { target = Code_id_or_name.name denv.le_monde_exterieur });
+    default_bp acc
+      (Use { target = Code_id_or_name.name denv.le_monde_exterieur });
     default acc
 
 and traverse_set_of_closures denv acc ~(bound_pattern : Bound_pattern.t)
@@ -394,8 +407,7 @@ and traverse_static_consts denv acc ~(bound_pattern : Bound_pattern.t) group =
                      { relation = Block i;
                        target = Code_id_or_name.name denv.all_constants
                      })
-                  acc
-                ))
+                  acc))
           fields
       | Set_of_closures _ -> assert false
       | _ -> ())
@@ -428,15 +440,18 @@ and traverse_let_cont_non_recursive denv acc cont ~body handler =
         conts;
         current_code_id = denv.current_code_id;
         le_monde_exterieur = denv.le_monde_exterieur;
-        all_constants = denv.all_constants;
+        all_constants = denv.all_constants
       }
     in
     traverse denv acc body
   in
   traverse_cont_handler
-    { parent = Up; conts = denv.conts; current_code_id = denv.current_code_id;
+    { parent = Up;
+      conts = denv.conts;
+      current_code_id = denv.current_code_id;
       le_monde_exterieur = denv.le_monde_exterieur;
-            all_constants = denv.all_constants;    }
+      all_constants = denv.all_constants
+    }
     acc cont_handler traverse
 
 and traverse_let_cont_recursive denv acc ~invariant_params ~body handlers =
@@ -472,9 +487,12 @@ and traverse_let_cont_recursive denv acc ~invariant_params ~body handlers =
         let is_cold = Continuation_handler.is_cold cont_handler in
         let expr =
           traverse
-            { parent = Up; conts; current_code_id = denv.current_code_id;
+            { parent = Up;
+              conts;
+              current_code_id = denv.current_code_id;
               le_monde_exterieur = denv.le_monde_exterieur;
-                    all_constants = denv.all_constants;            }
+              all_constants = denv.all_constants
+            }
             acc handler
         in
         let handler = { bound_parameters; expr; is_exn_handler; is_cold } in
@@ -486,7 +504,7 @@ and traverse_let_cont_recursive denv acc ~invariant_params ~body handlers =
       conts;
       current_code_id = denv.current_code_id;
       le_monde_exterieur = denv.le_monde_exterieur;
-      all_constants = denv.all_constants;    
+      all_constants = denv.all_constants
     }
   in
   traverse denv acc body
@@ -669,7 +687,8 @@ and traverse_invalid denv _acc ~message =
   let expr = Invalid { message } in
   { expr; holed_expr = denv.parent }
 
-and traverse_code (acc : acc) (code_id : Code_id.t) (code : Code.t) ~le_monde_exterieur ~all_constants : rev_code =
+and traverse_code (acc : acc) (code_id : Code_id.t) (code : Code.t)
+    ~le_monde_exterieur ~all_constants : rev_code =
   let params_and_body = Code.params_and_body code in
   Function_params_and_body.pattern_match params_and_body
     ~f:(fun
@@ -689,8 +708,8 @@ and traverse_code (acc : acc) (code_id : Code_id.t) (code : Code.t) ~le_monde_ex
         ~my_depth ~le_monde_exterieur ~all_constants)
 
 and traverse_function_params_and_body acc code_id code ~return_continuation
-    ~exn_continuation params ~body ~my_closure ~my_region ~my_ghost_region ~le_monde_exterieur ~all_constants
-    ~my_depth : rev_code =
+    ~exn_continuation params ~body ~my_closure ~my_region ~my_ghost_region
+    ~le_monde_exterieur ~all_constants ~my_depth : rev_code =
   let code_metadata = Code.code_metadata code in
   let free_names_of_params_and_body = Code0.free_names code in
   (* Note: this significately degrades the analysis on zero_alloc code. However,
@@ -711,9 +730,14 @@ and traverse_function_params_and_body acc code_id code ~return_continuation
     { is_exn_handler = true; params = [exn] };
   Acc.fixed_arity_continuation acc return_continuation;
   Acc.fixed_arity_continuation acc exn_continuation;
-  let denv = { parent = Up; conts; current_code_id = Some code_id;
-    le_monde_exterieur = le_monde_exterieur;
-               all_constants = all_constants;             } in
+  let denv =
+    { parent = Up;
+      conts;
+      current_code_id = Some code_id;
+      le_monde_exterieur;
+      all_constants
+    }
+  in
   if is_opaque
   then List.iter (fun v -> Acc.used ~denv (Simple.var v) acc) (exn :: return);
   Bound_parameters.iter (fun bp -> Acc.bound_parameter_kind bp acc) params;
@@ -764,10 +788,24 @@ type result =
 
 let run (unit : Flambda_unit.t) =
   let acc = Acc.create () in
-  let le_monde_exterieur = Symbol.create (Compilation_unit.get_current_exn ()) (Linkage_name.of_string "le_monde_extérieur") in
-  Acc.record_dep (Code_id_or_name.symbol le_monde_exterieur) (Use { target = (Code_id_or_name.symbol le_monde_exterieur) }) acc;
-  let all_constants = Symbol.create (Compilation_unit.get_current_exn ()) (Linkage_name.of_string "all_constants") in
-  Acc.record_dep (Code_id_or_name.symbol all_constants) (Use { target = (Code_id_or_name.symbol all_constants) }) acc;
+  let le_monde_exterieur =
+    Symbol.create
+      (Compilation_unit.get_current_exn ())
+      (Linkage_name.of_string "le_monde_extérieur")
+  in
+  Acc.record_dep
+    (Code_id_or_name.symbol le_monde_exterieur)
+    (Use { target = Code_id_or_name.symbol le_monde_exterieur })
+    acc;
+  let all_constants =
+    Symbol.create
+      (Compilation_unit.get_current_exn ())
+      (Linkage_name.of_string "all_constants")
+  in
+  Acc.record_dep
+    (Code_id_or_name.symbol all_constants)
+    (Use { target = Code_id_or_name.symbol all_constants })
+    acc;
   let create_holed () =
     let dummy_toplevel_return = Variable.create "dummy_toplevel_return" in
     let dummy_toplevel_exn = Variable.create "dummy_toplevel_exn" in
@@ -787,9 +825,12 @@ let run (unit : Flambda_unit.t) =
     Acc.fixed_arity_continuation acc return_continuation;
     Acc.fixed_arity_continuation acc exn_continuation;
     traverse
-      { parent = Up; conts; current_code_id = None;
+      { parent = Up;
+        conts;
+        current_code_id = None;
         le_monde_exterieur = Name.symbol le_monde_exterieur;
-        all_constants = Name.symbol all_constants;}
+        all_constants = Name.symbol all_constants
+      }
       acc (Flambda_unit.body unit)
   in
   let holed = Profile.record_call ~accumulate:false "down" create_holed in

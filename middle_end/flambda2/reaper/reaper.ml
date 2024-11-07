@@ -33,16 +33,14 @@ let run ~cmx_loader ~all_code (unit : Flambda_unit.t) =
   then Format.printf "USED %a@." Global_flow_graph.pp_used_graph deps;
   let solved_dep = Dep_solver.fixpoint deps in
   if debug_print
-  then begin
+  then (
     Format.printf "RESULT@ %a@." Dep_solver.pp_result solved_dep.uses;
-    Format.printf "Aliases@ %a@." Dep_solver.pp_dual_result solved_dep.aliases
-  end;
+    Format.printf "Aliases@ %a@." Dep_solver.pp_dual_result solved_dep.aliases);
   let () =
     if debug_print
-    then begin
+    then (
       Dot_printer.print_solved_dep solved_dep.uses (Code_id.Map.empty, deps);
-      Dot_printer.Dual.print solved_dep.dual_graph
-    end
+      Dot_printer.Dual.print solved_dep.dual_graph)
   in
   let Rebuild.{ body; free_names; all_code; slot_offsets } =
     Rebuild.rebuild ~fixed_arity_continuations ~continuation_info kinds

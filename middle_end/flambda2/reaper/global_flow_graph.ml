@@ -181,10 +181,11 @@ module Dep = struct
         Format.fprintf ppf "Constructor %a %a" Field.print relation
           Code_id_or_name.print target
       | Alias_if_def { target; if_defined } ->
-        Format.fprintf ppf "Alias_if_def %a %a" Name.print target Code_id_or_name.print
-          if_defined
+        Format.fprintf ppf "Alias_if_def %a %a" Name.print target
+          Code_id_or_name.print if_defined
       | Propagate { target; source } ->
-        Format.fprintf ppf "Propagate %a %a" Name.print target Code_id_or_name.print source
+        Format.fprintf ppf "Propagate %a %a" Name.print target
+          Code_id_or_name.print source
   end
 
   include M
@@ -246,8 +247,14 @@ let add_use t dep = Hashtbl.replace t.used dep ()
 module Dual = struct
   type edge =
     | Alias of { target : Code_id_or_name.t }
-    | Constructor of { target : Code_id_or_name.t; relation : Field.t }
-    | Accessor of { target : Code_id_or_name.t; relation : Field.t }
+    | Constructor of
+        { target : Code_id_or_name.t;
+          relation : Field.t
+        }
+    | Accessor of
+        { target : Code_id_or_name.t;
+          relation : Field.t
+        }
 
   type edges = edge list
 

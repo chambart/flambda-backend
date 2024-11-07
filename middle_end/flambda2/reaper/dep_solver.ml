@@ -366,11 +366,11 @@ module Graph = struct
     | Accessor _ -> false
     | Constructor _ -> true
     | Alias_if_def { if_defined; _ } -> (
-      match Hashtbl.find_opt uses (if_defined) with
+      match Hashtbl.find_opt uses if_defined with
       | None | Some Bottom -> false
       | Some (Fields _ | Top) -> true)
     | Propagate { source; _ } -> (
-      match Hashtbl.find_opt uses (source) with
+      match Hashtbl.find_opt uses source with
       | None | Some (Bottom | Fields _) -> false
       | Some Top -> true)
 
@@ -398,7 +398,6 @@ module Solver = Make_Fixpoint (Graph)
 
 module Dual_graph = struct
   include Global_flow_graph.Dual
-
   module Node = Code_id_or_name
 
   type field_elt =
@@ -406,11 +405,14 @@ module Dual_graph = struct
     | Field_vals of Code_id_or_name.Set.t
 
   type elt =
-    | Top (** Any value can flow to this variable *)
-    | Block of { fields : field_elt Field.Map.t; sources : Code_id_or_name.Set.t }
-      (** This value can be produced at any of those sources.
+    | Top  (** Any value can flow to this variable *)
+    | Block of
+        { fields : field_elt Field.Map.t;
+          sources : Code_id_or_name.Set.t
+        }
+        (** This value can be produced at any of those sources.
           Its value can be extracted from the fields of those field sources  *)
-    | Bottom (** No value can flow here *)
+    | Bottom  (** No value can flow here *)
 
   let pp_field_elt ppf elt =
     match elt with
@@ -424,24 +426,22 @@ module Dual_graph = struct
     | Block { fields; sources } ->
       Format.fprintf ppf "@[<hov 2>{@ sources: %a;@ fields: %a }@]"
         Code_id_or_name.Set.print sources
-        (Field.Map.print pp_field_elt) fields
+        (Field.Map.print pp_field_elt)
+        fields
 
   let fold_nodes (graph : graph) f init =
-    Code_id_or_name.Map.fold
-      (fun n _ acc -> f n acc)
-      graph init
+    Code_id_or_name.Map.fold (fun n _ acc -> f n acc) graph init
 
-  let fold_edges (type a) (graph : graph) (n : Node.t) (f : edge -> a -> a) (init : a) : a =
+  let fold_edges (type a) (graph : graph) (n : Node.t) (f : edge -> a -> a)
+      (init : a) : a =
     match Code_id_or_name.Map.find_opt n graph with
     | None -> init
-    | Some deps ->
-        List.fold_left (Fun.flip f) init deps
+    | Some deps -> List.fold_left (Fun.flip f) init deps
 
   let target (dep : edge) : Code_id_or_name.t =
     match dep with
-    | Alias { target }
-    | Accessor { target; _ }
-    | Constructor { target; _ } -> target
+    | Alias { target } | Accessor { target; _ } | Constructor { target; _ } ->
+      target
 
   let less_equal_elt (e1 : elt) (e2 : elt) =
     match e1, e2 with
@@ -451,7 +451,8 @@ module Dual_graph = struct
       if e1 == e2
       then true
       else
-        Code_id_or_name.Set.subset f1.sources f2.sources &&
+        Code_id_or_name.Set.subset f1.sources f2.sources
+        &&
         let ok = ref true in
         ignore
           (Field.Map.merge
@@ -486,19 +487,17 @@ module Dual_graph = struct
       | Bottom, e | e, Bottom -> e
       | Top, _ | _, Top -> Top
       | Block f1, Block f2 ->
-          let fields =
-            (Field.Map.union
-               (fun _ e1 e2 ->
-                  match e1, e2 with
-                  | Field_top, _ | _, Field_top -> Some Field_top
-                  | Field_vals e1, Field_vals e2 ->
-                      Some (Field_vals (Code_id_or_name.Set.union e1 e2)))
-             f1.fields f2.fields)
-          in
-          let sources =
-            Code_id_or_name.Set.union f1.sources f2.sources
-          in
-          Block { fields; sources }
+        let fields =
+          Field.Map.union
+            (fun _ e1 e2 ->
+              match e1, e2 with
+              | Field_top, _ | _, Field_top -> Some Field_top
+              | Field_vals e1, Field_vals e2 ->
+                Some (Field_vals (Code_id_or_name.Set.union e1 e2)))
+            f1.fields f2.fields
+        in
+        let sources = Code_id_or_name.Set.union f1.sources f2.sources in
+        Block { fields; sources }
 
   let make_field_elt sources (k : Code_id_or_name.t) =
     match Hashtbl.find_opt sources k with
@@ -509,13 +508,13 @@ module Dual_graph = struct
   let propagate sources (k : Code_id_or_name.t) (elt : elt) (dep : edge) : elt =
     match elt with
     | Bottom -> Bottom
-    | Top | Block _ ->
+    | Top | Block _ -> (
       match dep with
       | Alias _ -> elt
       | Constructor { relation; target } ->
-          Block {
-            fields = Field.Map.singleton relation (make_field_elt sources k);
-            sources = Code_id_or_name.Set.singleton target;
+        Block
+          { fields = Field.Map.singleton relation (make_field_elt sources k);
+            sources = Code_id_or_name.Set.singleton target
           }
       | Accessor { relation; _ } -> (
         match elt with
@@ -536,7 +535,7 @@ module Dual_graph = struct
                   | None -> Bottom
                   | Some e -> e))
               elems Bottom
-          with Exit -> Top))
+          with Exit -> Top)))
 
   let propagate_top _sources (dep : edge) : bool =
     match dep with
@@ -563,67 +562,69 @@ module Dual_graph = struct
 
   let set state n elt = Hashtbl.replace state n elt
 
-  let build_dual (graph : Graph.graph) (solution : Graph.state) : graph * Code_id_or_name.Set.t =
+  let build_dual (graph : Graph.graph) (solution : Graph.state) :
+      graph * Code_id_or_name.Set.t =
     let add graph from to_ =
-      Code_id_or_name.Map.update from (function
-          | None -> Some [to_]
-          | Some l -> Some (to_ :: l))
+      Code_id_or_name.Map.update from
+        (function None -> Some [to_] | Some l -> Some (to_ :: l))
         graph
     in
-    (* top_roots is the initialization of the fixpoint. We can only
-       consider top values as potential roots because we think that
-       every constructor descend from one that has at least one top as
-       its arguments.
-       This is somewhat safe because atomic values are top (let x = 1: x would be top)
-       and there are no purely cyclic values, for instance let rec x = x :: x would be initialized
-       from external C functions (so Top). And a loop produced through a function cannot terminate
-       (let rec loop () = (loop ()) :: (loop ())), hence the value is never produced.
-       Note that this last case might actually be tricky (dead code still has to be compiled)
-    *)
+    (* top_roots is the initialization of the fixpoint. We can only consider top
+       values as potential roots because we think that every constructor descend
+       from one that has at least one top as its arguments. This is somewhat
+       safe because atomic values are top (let x = 1: x would be top) and there
+       are no purely cyclic values, for instance let rec x = x :: x would be
+       initialized from external C functions (so Top). And a loop produced
+       through a function cannot terminate (let rec loop () = (loop ()) :: (loop
+       ())), hence the value is never produced. Note that this last case might
+       actually be tricky (dead code still has to be compiled) *)
     let top_roots = ref Code_id_or_name.Set.empty in
     let graph =
-    Hashtbl.fold (fun node (deps : Global_flow_graph.Dep.Set.t) acc ->
-        Global_flow_graph.Dep.Set.fold (fun dep acc ->
-        match dep with
-        | Alias { target } ->
-          add acc (Code_id_or_name.name target) (Alias { target = node })
-        | Alias_if_def { if_defined; target } ->
-            begin match Hashtbl.find_opt solution if_defined with
-          | None | Some Bottom -> acc
-          | Some (Fields _ | Top) ->
-            add acc (Code_id_or_name.name target) (Alias { target = node })
-        end
-        | Propagate _ ->
-            (* CR ncourant/pchambart: verify the invariant that this edge
-               should already be in the graph (or added later) by an alias_if_def *)
-            acc
-        | Constructor { relation; target } ->
-            add acc target
-              (Constructor { relation; target = node })
-        | Accessor { relation; target } ->
-            add acc (Code_id_or_name.name target)
-                (Accessor { relation; target = node })
-        | Use _ ->
-            top_roots := Code_id_or_name.Set.add node !top_roots;
-            acc
-          )
-          deps acc
-      )
-      graph.name_to_dep Code_id_or_name.Map.empty
+      Hashtbl.fold
+        (fun node (deps : Global_flow_graph.Dep.Set.t) acc ->
+          Global_flow_graph.Dep.Set.fold
+            (fun dep acc ->
+              match dep with
+              | Alias { target } ->
+                add acc (Code_id_or_name.name target) (Alias { target = node })
+              | Alias_if_def { if_defined; target } -> (
+                match Hashtbl.find_opt solution if_defined with
+                | None | Some Bottom -> acc
+                | Some (Fields _ | Top) ->
+                  add acc
+                    (Code_id_or_name.name target)
+                    (Alias { target = node }))
+              | Propagate _ ->
+                (* CR ncourant/pchambart: verify the invariant that this edge
+                   should already be in the graph (or added later) by an
+                   alias_if_def *)
+                acc
+              | Constructor { relation; target } ->
+                add acc target (Constructor { relation; target = node })
+              | Accessor { relation; target } ->
+                add acc
+                  (Code_id_or_name.name target)
+                  (Accessor { relation; target = node })
+              | Use _ ->
+                top_roots := Code_id_or_name.Set.add node !top_roots;
+                acc)
+            deps acc)
+        graph.name_to_dep Code_id_or_name.Map.empty
     in
     graph, !top_roots
-
 end
 
 module Alias_solver = Make_Fixpoint (Dual_graph)
 
 type use_result = Graph.state
+
 type alias_result = Dual_graph.state
-type result = {
-  uses : use_result;
-  aliases : alias_result;
-  dual_graph : Dual_graph.graph;
-}
+
+type result =
+  { uses : use_result;
+    aliases : alias_result;
+    dual_graph : Dual_graph.graph
+  }
 
 let pp_result ppf (res : use_result) =
   let elts = List.of_seq @@ Hashtbl.to_seq res in
@@ -641,7 +642,8 @@ let pp_dual_result ppf (res : Dual_graph.state) =
   let pp ppf l =
     let pp_sep ppf () = Format.fprintf ppf ",@ " in
     let pp ppf (name, elt) =
-      Format.fprintf ppf "%a: %a" Code_id_or_name.print name Dual_graph.pp_elt elt
+      Format.fprintf ppf "%a: %a" Code_id_or_name.print name Dual_graph.pp_elt
+        elt
     in
     Format.pp_print_list ~pp_sep pp ppf l
   in
@@ -676,6 +678,4 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
   let dual_graph, roots = Dual_graph.build_dual graph_new result in
   let aliases = Hashtbl.create 17 in
   Alias_solver.fixpoint_topo dual_graph roots aliases;
-  { uses = result;
-    aliases;
-    dual_graph }
+  { uses = result; aliases; dual_graph }

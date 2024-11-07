@@ -28,7 +28,7 @@ module Env = struct
       conts : cont_kind Continuation.Map.t;
       current_code_id : Code_id.t option;
       le_monde_exterieur : Name.t;
-      all_constants : Name.t;
+      all_constants : Name.t
     }
 end
 
@@ -39,7 +39,7 @@ type code_dep =
     return : Variable.t list; (* Dummy variable representing return value *)
     exn : Variable.t; (* Dummy variable representing exn return value *)
     is_tupled : bool;
-    indirect_call_witness : Code_id_or_name.t;
+    indirect_call_witness : Code_id_or_name.t
   }
 
 type apply_dep =
@@ -115,8 +115,7 @@ let add_code code_id dep t = t.code <- Code_id.Map.add code_id dep t.code
 
 let find_code t code_id = Code_id.Map.find code_id t.code
 
-let record_dep code_id_or_name dep t =
-  Graph.add_dep t.deps code_id_or_name dep
+let record_dep code_id_or_name dep t = Graph.add_dep t.deps code_id_or_name dep
 
 let record_deps ~denv:_ code_id_or_name deps t =
   Graph.add_deps t.deps code_id_or_name deps
@@ -126,7 +125,8 @@ let alias_dep ~denv pat dep t =
     ~name:(fun name ~coercion:_ ->
       Graph.add_dep t.deps (Code_id_or_name.var pat) (Alias { target = name }))
     ~const:(fun _ ->
-      Graph.add_dep t.deps (Code_id_or_name.var pat) (Use { target = Code_id_or_name.name denv.Env.all_constants }))
+      Graph.add_dep t.deps (Code_id_or_name.var pat)
+        (Use { target = Code_id_or_name.name denv.Env.all_constants }))
 
 let root v t = Graph.add_use t.deps (Code_id_or_name.var v)
 
@@ -269,10 +269,12 @@ let deps t ~all_constants =
         | Some code_id ->
           Graph.add_dep t.deps
             (Code_id_or_name.name param)
-            (Graph.Dep.Alias_if_def { target = name; if_defined = Code_id_or_name.code_id code_id });
+            (Graph.Dep.Alias_if_def
+               { target = name; if_defined = Code_id_or_name.code_id code_id });
           Graph.add_dep t.deps
             (Code_id_or_name.code_id code_id)
-            (Graph.Dep.Propagate { target = name; source = Code_id_or_name.name param })
+            (Graph.Dep.Propagate
+               { target = name; source = Code_id_or_name.name param })
       in
       List.iter2
         (fun param arg ->
@@ -286,8 +288,8 @@ let deps t ~all_constants =
         Simple.pattern_match apply_closure
           ~name:(fun name ~coercion:_ -> add_cond_dep code_dep.my_closure name)
           ~const:(fun _ ->
-              (* Very unlikely for a closure to be a const: probably dead code *)
-              add_cond_dep code_dep.my_closure all_constants));
+            (* Very unlikely for a closure to be a const: probably dead code *)
+            add_cond_dep code_dep.my_closure all_constants));
       (match params_of_apply_return_cont with
       | None -> ()
       | Some apply_return ->

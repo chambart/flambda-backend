@@ -186,7 +186,8 @@ let rewrite_set_of_closures bound (env : env) value_slots alloc_mode
     List.exists
       (fun bv ->
         match
-          Hashtbl.find_opt env.uses.uses (Code_id_or_name.var (Bound_var.var bv))
+          Hashtbl.find_opt env.uses.uses
+            (Code_id_or_name.var (Bound_var.var bv))
         with
         | None | Some Bottom -> false
         | Some Top -> true

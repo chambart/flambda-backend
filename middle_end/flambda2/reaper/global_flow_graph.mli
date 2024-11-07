@@ -99,8 +99,14 @@ val add_use : graph -> Code_id_or_name.t -> unit
 module Dual : sig
   type edge =
     | Alias of { target : Code_id_or_name.t }
-    | Constructor of { target : Code_id_or_name.t; relation : Field.t }
-    | Accessor of { target : Code_id_or_name.t; relation : Field.t }
+    | Constructor of
+        { target : Code_id_or_name.t;
+          relation : Field.t
+        }
+    | Accessor of
+        { target : Code_id_or_name.t;
+          relation : Field.t
+        }
 
   type edges = edge list
 

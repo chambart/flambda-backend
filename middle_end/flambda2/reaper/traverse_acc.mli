@@ -28,7 +28,7 @@ module Env : sig
       conts : cont_kind Continuation.Map.t;
       current_code_id : Code_id.t option;
       le_monde_exterieur : Name.t;
-      all_constants : Name.t;
+      all_constants : Name.t
     }
 end
 
@@ -39,7 +39,7 @@ type code_dep =
     return : Variable.t list; (* Dummy variable representing return value *)
     exn : Variable.t; (* Dummy variable representing exn return value *)
     is_tupled : bool;
-    indirect_call_witness : Code_id_or_name.t;
+    indirect_call_witness : Code_id_or_name.t
   }
 
 type apply_dep =
