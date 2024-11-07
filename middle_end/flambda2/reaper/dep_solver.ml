@@ -351,11 +351,11 @@ module Graph = struct
               elems Bottom
           with Exit -> Top))
       | Alias_if_def { if_defined; _ } -> (
-        match Hashtbl.find_opt uses (Code_id_or_name.code_id if_defined) with
+        match Hashtbl.find_opt uses if_defined with
         | None | Some Bottom -> Bottom
         | Some (Fields _ | Top) -> elt)
       | Propagate { source; _ } -> (
-        match Hashtbl.find_opt uses (Code_id_or_name.name source) with
+        match Hashtbl.find_opt uses source with
         | None -> Bottom
         | Some elt -> elt))
 
@@ -419,7 +419,7 @@ let cannot_unbox _id elt =
         match[@ocaml.warning "-4"] field with
         | Code_of_closure | Apply _ -> true
         | _ -> false)
-      fields.uses
+      fields
 
 let fixpoint (graph_new : Global_flow_graph.graph) =
   let result = Hashtbl.create 17 in
