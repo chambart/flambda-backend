@@ -30,3 +30,18 @@ val pp_elt : Format.formatter -> elt -> unit
 val pp_result : Format.formatter -> result -> unit
 
 val fixpoint : Global_flow_graph.graph -> result
+
+module Dual_graph : sig
+
+  type edge =
+    | Alias of { target : Code_id_or_name.t }
+    | Constructor of { target : Code_id_or_name.t; relation : Global_flow_graph.Field.t }
+    | Accessor of { target : Code_id_or_name.t; relation : Global_flow_graph.Field.t }
+
+  type edges = edge list
+
+  type graph = edges Code_id_or_name.Map.t
+
+end
+
+val print_dual_dot : (Dual_graph.graph -> unit) ref

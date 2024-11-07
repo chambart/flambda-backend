@@ -661,6 +661,8 @@ let cannot_unbox _id elt =
         | _ -> false)
       fields
 
+let print_dual_dot = ref (fun _ -> ())
+
 let fixpoint (graph_new : Global_flow_graph.graph) =
   let result = Hashtbl.create 17 in
   let uses =
@@ -679,4 +681,5 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
   let aliases = Hashtbl.create 17 in
   Alias_solver.fixpoint_topo dual_graph roots aliases;
   Format.printf "Aliases:@.%a@." pp_dual_result aliases;
+  !print_dual_dot dual_graph;
   result
