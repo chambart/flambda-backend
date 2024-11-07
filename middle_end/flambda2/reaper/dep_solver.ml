@@ -397,15 +397,7 @@ end
 module Solver = Make_Fixpoint (Graph)
 
 module Dual_graph = struct
-
-  type edge =
-    | Alias of { target : Code_id_or_name.t }
-    | Constructor of { target : Code_id_or_name.t; relation : Global_flow_graph.Field.t }
-    | Accessor of { target : Code_id_or_name.t; relation : Global_flow_graph.Field.t }
-
-  type edges = edge list
-
-  type graph = edges Code_id_or_name.Map.t
+  include Global_flow_graph.Dual
 
   module Node = Code_id_or_name
 
@@ -625,9 +617,15 @@ end
 
 module Alias_solver = Make_Fixpoint (Dual_graph)
 
-type result = Graph.state
+type use_result = Graph.state
+type alias_result = Dual_graph.state
+type result = {
+  uses : use_result;
+  aliases : alias_result;
+  dual_graph : Dual_graph.graph;
+}
 
-let pp_result ppf (res : result) =
+let pp_result ppf (res : use_result) =
   let elts = List.of_seq @@ Hashtbl.to_seq res in
   let pp ppf l =
     let pp_sep ppf () = Format.fprintf ppf ",@ " in
@@ -661,8 +659,6 @@ let cannot_unbox _id elt =
         | _ -> false)
       fields
 
-let print_dual_dot = ref (fun _ -> ())
-
 let fixpoint (graph_new : Global_flow_graph.graph) =
   let result = Hashtbl.create 17 in
   let uses =
@@ -680,6 +676,6 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
   let dual_graph, roots = Dual_graph.build_dual graph_new result in
   let aliases = Hashtbl.create 17 in
   Alias_solver.fixpoint_topo dual_graph roots aliases;
-  Format.printf "Aliases:@.%a@." pp_dual_result aliases;
-  !print_dual_dot dual_graph;
-  result
+  { uses = result;
+    aliases;
+    dual_graph }

@@ -242,3 +242,14 @@ let add_deps t bound_to deps =
   inserts tbl bound_to deps
 
 let add_use t dep = Hashtbl.replace t.used dep ()
+
+module Dual = struct
+  type edge =
+    | Alias of { target : Code_id_or_name.t }
+    | Constructor of { target : Code_id_or_name.t; relation : Field.t }
+    | Accessor of { target : Code_id_or_name.t; relation : Field.t }
+
+  type edges = edge list
+
+  type graph = edges Code_id_or_name.Map.t
+end

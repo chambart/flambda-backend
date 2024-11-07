@@ -32,7 +32,7 @@ type env =
     should_keep_param : Continuation.t -> Variable.t -> bool
   }
 
-let is_used (env : env) cn = Hashtbl.mem env.uses cn
+let is_used (env : env) cn = Hashtbl.mem env.uses.uses cn
 
 let is_code_id_used (env : env) code_id =
   is_used env (Code_id_or_name.code_id code_id)
@@ -186,7 +186,7 @@ let rewrite_set_of_closures bound (env : env) value_slots alloc_mode
     List.exists
       (fun bv ->
         match
-          Hashtbl.find_opt env.uses (Code_id_or_name.var (Bound_var.var bv))
+          Hashtbl.find_opt env.uses.uses (Code_id_or_name.var (Bound_var.var bv))
         with
         | None | Some Bottom -> false
         | Some Top -> true
@@ -195,7 +195,7 @@ let rewrite_set_of_closures bound (env : env) value_slots alloc_mode
   in
   let code_is_used bv =
     match
-      Hashtbl.find_opt env.uses (Code_id_or_name.var (Bound_var.var bv))
+      Hashtbl.find_opt env.uses.uses (Code_id_or_name.var (Bound_var.var bv))
     with
     | None | Some Bottom -> false
     | Some Top -> true
@@ -556,7 +556,7 @@ let rebuild
     in
     keep_all_parameters
     ||
-    let is_var_used = Hashtbl.mem solved_dep (Code_id_or_name.var param) in
+    let is_var_used = Hashtbl.mem solved_dep.uses (Code_id_or_name.var param) in
     is_var_used
     ||
     let info = Continuation.Map.find cont continuation_info in

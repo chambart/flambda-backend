@@ -95,3 +95,14 @@ val add_dep : graph -> Code_id_or_name.t -> Dep.t -> unit
 val add_deps : graph -> Code_id_or_name.t -> Dep.Set.t -> unit
 
 val add_use : graph -> Code_id_or_name.t -> unit
+
+module Dual : sig
+  type edge =
+    | Alias of { target : Code_id_or_name.t }
+    | Constructor of { target : Code_id_or_name.t; relation : Field.t }
+    | Accessor of { target : Code_id_or_name.t; relation : Field.t }
+
+  type edges = edge list
+
+  type graph = edges Code_id_or_name.Map.t
+end

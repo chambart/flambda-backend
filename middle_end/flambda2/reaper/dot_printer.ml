@@ -130,7 +130,7 @@ let print_dep dep =
   print_graph ~print_name:"dep" ~lazy_ppf:dep_graph_ppf ~graph:dep
     ~print:(P.print ~print_color:white_color)
 
-let print_solved_dep (result : Dep_solver.result) dep =
+let print_solved_dep (result : Dep_solver.use_result) dep =
   let print_color id =
     match Hashtbl.find_opt result id with
     | None | Some Bottom -> "white"
@@ -143,7 +143,7 @@ let print_solved_dep (result : Dep_solver.result) dep =
 
 module Dual = struct
   module Graph = struct
-    include Dep_solver.Dual_graph
+    include Global_flow_graph.Dual
     module Dep = struct
       type t = edge
     end
@@ -259,20 +259,17 @@ let print_dep dep =
   print_graph ~print_name:"alias" ~lazy_ppf:dep_graph_ppf ~graph:dep
     ~print:(P.print ~print_color:white_color)
 
-let print_solved_dep (result : Dep_solver.result) dep =
-  let print_color id =
-    match Hashtbl.find_opt result id with
-    | None | Some Bottom -> "white"
-    | Some Top -> "#a7a7a7"
-    | Some (Fields _) -> "#f1c40f"
-  in
-  print_graph ~print_name:"solve_dep" ~lazy_ppf:dep_graph_ppf ~graph:dep
-    ~print:(P.print ~print_color)
+(* let print_solved_dep (result : Dep_solver.use_result) dep = *)
+(*   let print_color id = *)
+(*     match Hashtbl.find_opt result id with *)
+(*     | None | Some Bottom -> "white" *)
+(*     | Some Top -> "#a7a7a7" *)
+(*     | Some (Fields _) -> "#f1c40f" *)
+(*   in *)
+(*   print_graph ~print_name:"solve_dep" ~lazy_ppf:dep_graph_ppf ~graph:dep *)
+(*     ~print:(P.print ~print_color) *)
 
 let print graph =
   print_dep (Code_id.Map.empty, graph)
-
-  let () =
-    Dep_solver.print_dual_dot := print
 
 end
