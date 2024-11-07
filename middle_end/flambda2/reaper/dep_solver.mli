@@ -14,9 +14,7 @@
 (**************************************************************************)
 
 (* CR-someday ncourant: expose only accessors instead of the types *)
-type field_elt =
-  | Field_top
-  | Field_vals of Code_id_or_name.Set.t
+type field_elt = Code_id_or_name.Set.t
 
 type elt =
   | Top

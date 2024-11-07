@@ -211,9 +211,7 @@ module Make_Fixpoint (G : Graph) = struct
       ()
 end
 
-type field_elt =
-  | Field_top
-  | Field_vals of Code_id_or_name.Set.t
+type field_elt = Code_id_or_name.Set.t
 
 (** Represents the part of a value that can be accessed *)
 type elt =
@@ -225,9 +223,7 @@ type elt =
   | Bottom  (** Value not accessed *)
 
 let pp_field_elt ppf elt =
-  match elt with
-  | Field_top -> Format.pp_print_string ppf "⊤"
-  | Field_vals s -> Code_id_or_name.Set.print ppf s
+  Code_id_or_name.Set.print ppf elt
 
 let pp_elt ppf elt =
   match elt with
@@ -279,9 +275,7 @@ module Graph = struct
                (match e1, e2 with
                | None, _ -> ()
                | Some _, None -> ok := false
-               | _, Some Field_top -> ()
-               | Some Field_top, _ -> ok := false
-               | Some (Field_vals e1), Some (Field_vals e2) ->
+               | Some (e1), Some (e2) ->
                  if not (Code_id_or_name.Set.subset e1 e2) then ok := false);
                None)
              f1 f2);
@@ -293,9 +287,7 @@ module Graph = struct
     | Fields f ->
       Field.Map.fold
         (fun _ v acc ->
-          match v with
-          | Field_top -> acc
-          | Field_vals v -> Code_id_or_name.Set.union v acc)
+          Code_id_or_name.Set.union v acc)
         f Code_id_or_name.Set.empty
 
   let join_elt e1 e2 =
@@ -309,17 +301,11 @@ module Graph = struct
         Fields
           (Field.Map.union
              (fun _ e1 e2 ->
-               match e1, e2 with
-               | Field_top, _ | _, Field_top -> Some Field_top
-               | Field_vals e1, Field_vals e2 ->
-                 Some (Field_vals (Code_id_or_name.Set.union e1 e2)))
+                 Some (Code_id_or_name.Set.union e1 e2))
              f1 f2)
 
-  let make_field_elt uses (k : Code_id_or_name.t) =
-    match Hashtbl.find_opt uses k with
-    | Some Top -> Field_top
-    | None | Some (Bottom | Fields _) ->
-      Field_vals (Code_id_or_name.Set.singleton k)
+  let make_field_elt _uses (k : Code_id_or_name.t) =
+    Code_id_or_name.Set.singleton k
 
   let propagate uses (k : Code_id_or_name.t) (elt : elt) (dep : dep) : elt =
     match elt with
@@ -339,8 +325,7 @@ module Graph = struct
             let elems =
               match Field.Map.find_opt relation fields with
               | None -> Code_id_or_name.Set.empty
-              | Some Field_top -> raise Exit
-              | Some (Field_vals s) -> s
+              | Some s -> s
             in
             Code_id_or_name.Set.fold
               (fun n acc ->
