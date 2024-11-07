@@ -218,9 +218,7 @@ type field_elt =
 (** Represents the part of a value that can be accessed *)
 type elt =
   | Top  (** Value completely accessed *)
-  | Fields of
-      { uses : field_elt Field.Map.t;
-        aliases_of_this : Code_id_or_name.Set.t }
+  | Fields of field_elt Field.Map.t
       (** Only the given fields are accessed, each field either being completely accessed for [Field_top]
       or corresponding to the union of all the elements corresponding to all the
       [Code_id_or_name.t] in the set for [Field_vals]. *)
@@ -236,8 +234,7 @@ let pp_elt ppf elt =
   | Top -> Format.pp_print_string ppf "⊤"
   | Bottom -> Format.pp_print_string ppf "⊥"
   | Fields fields ->
-    Format.fprintf ppf "@[<hov 2>{@ uses: %a;@ aliases_of_this: %a@ }@]" (Field.Map.print pp_field_elt) fields.uses
-      Code_id_or_name.Set.print fields.aliases_of_this
+    Format.fprintf ppf "{ %a }" (Field.Map.print pp_field_elt) fields
 
 module Graph = struct
   type graph = Global_flow_graph.graph
@@ -272,10 +269,9 @@ module Graph = struct
     | Bottom, _ | _, Top -> true
     | (Top | Fields _), Bottom | Top, Fields _ -> false
     | Fields f1, Fields f2 ->
-      if f1.uses == f2.uses && f1.aliases_of_this == f2.aliases_of_this
+      if f1 == f2
       then true
       else
-        Code_id_or_name.Set.subset f1.aliases_of_this f2.aliases_of_this &&
         let ok = ref true in
         ignore
           (Field.Map.merge
@@ -288,7 +284,7 @@ module Graph = struct
                | Some (Field_vals e1), Some (Field_vals e2) ->
                  if not (Code_id_or_name.Set.subset e1 e2) then ok := false);
                None)
-             f1.uses f2.uses);
+             f1 f2);
         !ok
 
   let elt_deps elt =
@@ -300,7 +296,7 @@ module Graph = struct
           match v with
           | Field_top -> acc
           | Field_vals v -> Code_id_or_name.Set.union v acc)
-        f.uses Code_id_or_name.Set.empty
+        f Code_id_or_name.Set.empty
 
   let join_elt e1 e2 =
     if e1 == e2
@@ -310,19 +306,14 @@ module Graph = struct
       | Bottom, e | e, Bottom -> e
       | Top, _ | _, Top -> Top
       | Fields f1, Fields f2 ->
-        let uses =
+        Fields
           (Field.Map.union
              (fun _ e1 e2 ->
                match e1, e2 with
                | Field_top, _ | _, Field_top -> Some Field_top
                | Field_vals e1, Field_vals e2 ->
                  Some (Field_vals (Code_id_or_name.Set.union e1 e2)))
-             f1.uses f2.uses)
-        in
-        let aliases_of_this =
-          Code_id_or_name.Set.union f1.aliases_of_this f2.aliases_of_this
-        in
-        Fields { uses; aliases_of_this }
+             f1 f2)
 
   let make_field_elt uses (k : Code_id_or_name.t) =
     match Hashtbl.find_opt uses k with
@@ -330,36 +321,23 @@ module Graph = struct
     | None | Some (Bottom | Fields _) ->
       Field_vals (Code_id_or_name.Set.singleton k)
 
-  let alias_of_target target = function
-    | Top -> Top
-    | Bottom -> Bottom
-    | Fields { uses; aliases_of_this } ->
-        Fields {
-          uses;
-          aliases_of_this =
-            Code_id_or_name.Set.add target aliases_of_this}
-
   let propagate uses (k : Code_id_or_name.t) (elt : elt) (dep : dep) : elt =
     match elt with
     | Bottom -> Bottom
     | Top | Fields _ -> (
       match dep with
-      | Alias { target } ->
-        alias_of_target (Code_id_or_name.name target) elt
+      | Alias _ -> elt
       | Use _ -> Top
-      | Accessor { relation; target } ->
-          Fields {
-            uses = Field.Map.singleton relation (make_field_elt uses k);
-            aliases_of_this = Code_id_or_name.Set.singleton (Code_id_or_name.name target) }
-      | Constructor { relation; target } ->
-        (match elt with
+      | Accessor { relation; _ } ->
+        Fields (Field.Map.singleton relation (make_field_elt uses k))
+      | Constructor { relation; _ } -> (
+        match elt with
         | Bottom -> assert false
         | Top -> Top
-        | Fields fields ->
-          let elt =
+        | Fields fields -> (
           try
             let elems =
-              match Field.Map.find_opt relation fields.uses with
+              match Field.Map.find_opt relation fields with
               | None -> Code_id_or_name.Set.empty
               | Some Field_top -> raise Exit
               | Some (Field_vals s) -> s
@@ -371,18 +349,13 @@ module Graph = struct
                   | None -> Bottom
                   | Some e -> e))
               elems Bottom
-          with Exit -> Top
-          in
-          alias_of_target target elt)
-      | Alias_if_def { if_defined; target } ->
-        alias_of_target (Code_id_or_name.name target)
-        (match Hashtbl.find_opt uses if_defined with
+          with Exit -> Top))
+      | Alias_if_def { if_defined; _ } -> (
+        match Hashtbl.find_opt uses (Code_id_or_name.code_id if_defined) with
         | None | Some Bottom -> Bottom
         | Some (Fields _ | Top) -> elt)
-      | Propagate { source; target } ->
-        alias_of_target (Code_id_or_name.name target)
-              (
-        match Hashtbl.find_opt uses (source) with
+      | Propagate { source; _ } -> (
+        match Hashtbl.find_opt uses (Code_id_or_name.name source) with
         | None -> Bottom
         | Some elt -> elt))
 
