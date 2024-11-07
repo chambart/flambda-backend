@@ -611,8 +611,8 @@ module Dual_graph = struct
         | Accessor { relation; target } ->
             add acc (Code_id_or_name.name target)
                 (Accessor { relation; target = node })
-        | Use { target } ->
-            top_roots := Code_id_or_name.Set.add target !top_roots;
+        | Use _ ->
+            top_roots := Code_id_or_name.Set.add node !top_roots;
             acc
           )
           deps acc
