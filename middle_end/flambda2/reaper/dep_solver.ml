@@ -396,6 +396,213 @@ end
 
 module Solver = Make_Fixpoint (Graph)
 
+module Dual_graph = struct
+
+  type edge =
+    | Alias of { target : Code_id_or_name.t }
+    | Constructor of { target : Code_id_or_name.t; relation : Global_flow_graph.Field.t }
+    | Accessor of { target : Code_id_or_name.t; relation : Global_flow_graph.Field.t }
+
+  type edges = edge list
+
+  type graph = edges Code_id_or_name.Map.t
+
+  module Node = Code_id_or_name
+
+  type field_elt =
+    | Field_top
+    | Field_vals of Code_id_or_name.Set.t
+
+  type elt =
+    | Top (** Any value can flow to this variable *)
+    | Block of { fields : field_elt Field.Map.t; sources : Code_id_or_name.Set.t }
+      (** This value can be produced at any of those sources.
+          Its value can be extracted from the fields of those field sources  *)
+    | Bottom (** No value can flow here *)
+
+  let fold_nodes (graph : graph) f init =
+    Code_id_or_name.Map.fold
+      (fun n _ acc -> f n acc)
+      graph init
+
+  let fold_edges (type a) (graph : graph) (n : Node.t) (f : edge -> a -> a) (init : a) : a =
+    match Code_id_or_name.Map.find_opt n graph with
+    | None -> init
+    | Some deps ->
+        List.fold_left (Fun.flip f) init deps
+
+  let target (dep : edge) : Code_id_or_name.t =
+    match dep with
+    | Alias { target }
+    | Accessor { target; _ }
+    | Constructor { target; _ } -> target
+
+  let less_equal_elt (e1 : elt) (e2 : elt) =
+    match e1, e2 with
+    | Bottom, _ | _, Top -> true
+    | (Top | Block _), Bottom | Top, Block _ -> false
+    | Block f1, Block f2 ->
+      if e1 == e2
+      then true
+      else
+        Code_id_or_name.Set.subset f1.sources f2.sources &&
+        let ok = ref true in
+        ignore
+          (Field.Map.merge
+             (fun _ e1 e2 ->
+               (match e1, e2 with
+               | None, _ -> ()
+               | Some _, None -> ok := false
+               | _, Some Field_top -> ()
+               | Some Field_top, _ -> ok := false
+               | Some (Field_vals e1), Some (Field_vals e2) ->
+                 if not (Code_id_or_name.Set.subset e1 e2) then ok := false);
+               None)
+             f1.fields f2.fields);
+        !ok
+
+  let elt_deps elt =
+    match elt with
+    | Bottom | Top -> Code_id_or_name.Set.empty
+    | Block f ->
+      Field.Map.fold
+        (fun _ v acc ->
+          match v with
+          | Field_top -> acc
+          | Field_vals v -> Code_id_or_name.Set.union v acc)
+        f.fields Code_id_or_name.Set.empty
+
+  let join_elt e1 e2 =
+    if e1 == e2
+    then e1
+    else
+      match e1, e2 with
+      | Bottom, e | e, Bottom -> e
+      | Top, _ | _, Top -> Top
+      | Block f1, Block f2 ->
+          let fields =
+            (Field.Map.union
+               (fun _ e1 e2 ->
+                  match e1, e2 with
+                  | Field_top, _ | _, Field_top -> Some Field_top
+                  | Field_vals e1, Field_vals e2 ->
+                      Some (Field_vals (Code_id_or_name.Set.union e1 e2)))
+             f1.fields f2.fields)
+          in
+          let sources =
+            Code_id_or_name.Set.union f1.sources f2.sources
+          in
+          Block { fields; sources }
+
+  let make_field_elt sources (k : Code_id_or_name.t) =
+    match Hashtbl.find_opt sources k with
+    | Some Top -> Field_top
+    | None | Some (Bottom | Block _) ->
+      Field_vals (Code_id_or_name.Set.singleton k)
+
+  let propagate sources (k : Code_id_or_name.t) (elt : elt) (dep : edge) : elt =
+    match elt with
+    | Bottom -> Bottom
+    | Top | Block _ ->
+      match dep with
+      | Alias _ -> elt
+      | Constructor { relation; target } ->
+          Block {
+            fields = Field.Map.singleton relation (make_field_elt sources k);
+            sources = Code_id_or_name.Set.singleton target;
+          }
+      | Accessor { relation; _ } -> (
+        match elt with
+        | Bottom -> assert false
+        | Top -> Top
+        | Block { fields; _ } -> (
+          try
+            let elems =
+              match Field.Map.find_opt relation fields with
+              | None -> Code_id_or_name.Set.empty
+              | Some Field_top -> raise Exit
+              | Some (Field_vals s) -> s
+            in
+            Code_id_or_name.Set.fold
+              (fun n acc ->
+                join_elt acc
+                  (match Hashtbl.find_opt sources n with
+                  | None -> Bottom
+                  | Some e -> e))
+              elems Bottom
+          with Exit -> Top))
+
+  let propagate_top _sources (dep : edge) : bool =
+    match dep with
+    | Alias _ -> true
+    | Constructor _ -> false
+    | Accessor _ -> true
+
+  let top = Top
+
+  let is_top = function Top -> true | Bottom | Block _ -> false
+
+  let is_bottom = function Bottom -> true | Top | Block _ -> false
+
+  let widen _ ~old:elt1 elt2 = join_elt elt1 elt2
+
+  let join _ elt1 elt2 = join_elt elt1 elt2
+
+  let less_equal _ elt1 elt2 = less_equal_elt elt1 elt2
+
+  type state = (Code_id_or_name.t, elt) Hashtbl.t
+
+  let get state n =
+    match Hashtbl.find_opt state n with None -> Bottom | Some elt -> elt
+
+  let set state n elt = Hashtbl.replace state n elt
+
+  let build_dual (graph : Graph.graph) (solution : Graph.state) : graph * state =
+    let add graph from to_ =
+      Code_id_or_name.Map.update from (function
+          | None -> Some [to_]
+          | Some l -> Some (to_ :: l))
+        graph
+    in
+    let state : state =
+      Hashtbl.create 42
+    in
+    let graph =
+    Hashtbl.fold (fun node (deps : Global_flow_graph.Dep.Set.t) acc ->
+        Global_flow_graph.Dep.Set.fold (fun dep acc ->
+        match dep with
+        | Alias { target } ->
+          add acc (Code_id_or_name.name target) (Alias { target = node })
+        | Alias_if_def { if_defined; target } ->
+            begin match Hashtbl.find_opt solution if_defined with
+          | None | Some Bottom -> acc
+          | Some (Fields _ | Top) ->
+            add acc (Code_id_or_name.name target) (Alias { target = node })
+        end
+        | Propagate _ ->
+            (* CR ncourant/pchambart: verify the invariant that this edge
+               should already be in the graph (or added later) by an alias_if_def  *)
+            acc
+        | Constructor { relation; target } ->
+            add acc target
+              (Constructor { relation; target = node })
+        | Accessor { relation; target } ->
+            add acc (Code_id_or_name.name target)
+                (Accessor { relation; target = node })
+        | Use { target } ->
+            set state target Top;
+            acc
+          )
+          deps acc
+      )
+      graph.name_to_dep Code_id_or_name.Map.empty
+    in
+    graph, state
+
+end
+
+module Alias_solver = Make_Fixpoint (Dual_graph)
+
 type result = Graph.state
 
 let pp_result ppf (res : result) =
