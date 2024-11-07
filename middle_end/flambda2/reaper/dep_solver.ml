@@ -420,6 +420,20 @@ module Dual_graph = struct
           Its value can be extracted from the fields of those field sources  *)
     | Bottom (** No value can flow here *)
 
+  let pp_field_elt ppf elt =
+    match elt with
+    | Field_top -> Format.pp_print_string ppf "⊤"
+    | Field_vals s -> Code_id_or_name.Set.print ppf s
+
+  let pp_elt ppf elt =
+    match elt with
+    | Top -> Format.pp_print_string ppf "⊤"
+    | Bottom -> Format.pp_print_string ppf "⊥"
+    | Block { fields; sources } ->
+      Format.fprintf ppf "@[<hov 2>{@ sources: %a;@ fields: %a }@]"
+        Code_id_or_name.Set.print sources
+        (Field.Map.print pp_field_elt) fields
+
   let fold_nodes (graph : graph) f init =
     Code_id_or_name.Map.fold
       (fun n _ acc -> f n acc)
@@ -557,16 +571,24 @@ module Dual_graph = struct
 
   let set state n elt = Hashtbl.replace state n elt
 
-  let build_dual (graph : Graph.graph) (solution : Graph.state) : graph * state =
+  let build_dual (graph : Graph.graph) (solution : Graph.state) : graph * Code_id_or_name.Set.t =
     let add graph from to_ =
       Code_id_or_name.Map.update from (function
           | None -> Some [to_]
           | Some l -> Some (to_ :: l))
         graph
     in
-    let state : state =
-      Hashtbl.create 42
-    in
+    (* top_roots is the initialization of the fixpoint. We can only
+       consider top values as potential roots because we think that
+       every constructor descend from one that has at least one top as
+       its arguments.
+       This is somewhat safe because atomic values are top (let x = 1: x would be top)
+       and there are no purely cyclic values, for instance let rec x = x :: x would be initialized
+       from external C functions (so Top). And a loop produced through a function cannot terminate
+       (let rec loop () = (loop ()) :: (loop ())), hence the value is never produced.
+       Note that this last case might actually be tricky (dead code still has to be compiled)
+    *)
+    let top_roots = ref Code_id_or_name.Set.empty in
     let graph =
     Hashtbl.fold (fun node (deps : Global_flow_graph.Dep.Set.t) acc ->
         Global_flow_graph.Dep.Set.fold (fun dep acc ->
@@ -581,7 +603,7 @@ module Dual_graph = struct
         end
         | Propagate _ ->
             (* CR ncourant/pchambart: verify the invariant that this edge
-               should already be in the graph (or added later) by an alias_if_def  *)
+               should already be in the graph (or added later) by an alias_if_def *)
             acc
         | Constructor { relation; target } ->
             add acc target
@@ -590,14 +612,14 @@ module Dual_graph = struct
             add acc (Code_id_or_name.name target)
                 (Accessor { relation; target = node })
         | Use { target } ->
-            set state target Top;
+            top_roots := Code_id_or_name.Set.add target !top_roots;
             acc
           )
           deps acc
       )
       graph.name_to_dep Code_id_or_name.Map.empty
     in
-    graph, state
+    graph, !top_roots
 
 end
 
@@ -611,6 +633,17 @@ let pp_result ppf (res : result) =
     let pp_sep ppf () = Format.fprintf ppf ",@ " in
     let pp ppf (name, elt) =
       Format.fprintf ppf "%a: %a" Code_id_or_name.print name pp_elt elt
+    in
+    Format.pp_print_list ~pp_sep pp ppf l
+  in
+  Format.fprintf ppf "@[<hov 2>{@ %a@ }@]" pp elts
+
+let pp_dual_result ppf (res : Dual_graph.state) =
+  let elts = List.of_seq @@ Hashtbl.to_seq res in
+  let pp ppf l =
+    let pp_sep ppf () = Format.fprintf ppf ",@ " in
+    let pp ppf (name, elt) =
+      Format.fprintf ppf "%a: %a" Code_id_or_name.print name Dual_graph.pp_elt elt
     in
     Format.pp_print_list ~pp_sep pp ppf l
   in
@@ -642,4 +675,8 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
       then
         Format.printf "%a => %a@." Code_id_or_name.print code_or_name pp_elt elt)
     result;
+  let dual_graph, roots = Dual_graph.build_dual graph_new result in
+  let aliases = Hashtbl.create 17 in
+  Alias_solver.fixpoint_topo dual_graph roots aliases;
+  Format.printf "Aliases:@.%a@." pp_dual_result aliases;
   result

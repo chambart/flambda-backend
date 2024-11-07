@@ -28,6 +28,7 @@ module Env = struct
       conts : cont_kind Continuation.Map.t;
       current_code_id : Code_id.t option;
       le_monde_exterieur : Name.t;
+      all_constants : Name.t;
     }
 end
 
@@ -114,17 +115,18 @@ let add_code code_id dep t = t.code <- Code_id.Map.add code_id dep t.code
 
 let find_code t code_id = Code_id.Map.find code_id t.code
 
-let record_dep ~denv:_ code_id_or_name dep t =
+let record_dep code_id_or_name dep t =
   Graph.add_dep t.deps code_id_or_name dep
 
 let record_deps ~denv:_ code_id_or_name deps t =
   Graph.add_deps t.deps code_id_or_name deps
 
-let alias_dep ~denv:_ pat dep t =
+let alias_dep ~denv pat dep t =
   Simple.pattern_match dep
     ~name:(fun name ~coercion:_ ->
       Graph.add_dep t.deps (Code_id_or_name.var pat) (Alias { target = name }))
-    ~const:(fun _ -> ())
+    ~const:(fun _ ->
+      Graph.add_dep t.deps (Code_id_or_name.var pat) (Use { target = Code_id_or_name.name denv.Env.all_constants }))
 
 let root v t = Graph.add_use t.deps (Code_id_or_name.var v)
 
@@ -247,7 +249,7 @@ let record_set_of_closure_deps t =
              }))
     t.set_of_closures_dep
 
-let deps t =
+let deps t ~all_constants =
   List.iter
     (fun { function_containing_apply_expr;
            apply_code_id;
@@ -276,14 +278,16 @@ let deps t =
         (fun param arg ->
           Simple.pattern_match arg
             ~name:(fun name ~coercion:_ -> add_cond_dep param name)
-            ~const:(fun _ -> ()))
+            ~const:(fun _ -> add_cond_dep param all_constants))
         code_dep.params apply_args;
       (match apply_closure with
       | None -> ()
       | Some apply_closure ->
         Simple.pattern_match apply_closure
           ~name:(fun name ~coercion:_ -> add_cond_dep code_dep.my_closure name)
-          ~const:(fun _ -> ()));
+          ~const:(fun _ ->
+              (* Very unlikely for a closure to be a const: probably dead code *)
+              add_cond_dep code_dep.my_closure all_constants));
       (match params_of_apply_return_cont with
       | None -> ()
       | Some apply_return ->

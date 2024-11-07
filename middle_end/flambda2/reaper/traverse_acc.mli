@@ -28,6 +28,7 @@ module Env : sig
       conts : cont_kind Continuation.Map.t;
       current_code_id : Code_id.t option;
       le_monde_exterieur : Name.t;
+      all_constants : Name.t;
     }
 end
 
@@ -62,7 +63,7 @@ val alias_kind : Name.t -> Simple.t -> t -> unit
 
 val kinds : t -> Flambda_kind.t Name.Map.t
 
-val record_dep : denv:Env.t -> Code_id_or_name.t -> Graph.Dep.t -> t -> unit
+val record_dep : Code_id_or_name.t -> Graph.Dep.t -> t -> unit
 
 val record_deps :
   denv:Env.t -> Code_id_or_name.t -> Graph.Dep.Set.t -> t -> unit
@@ -95,4 +96,4 @@ val find_code : t -> Code_id.t -> code_dep
 
 val code_deps : t -> code_dep Code_id.Map.t
 
-val deps : t -> Graph.graph
+val deps : t -> all_constants:Name.t -> Graph.graph
