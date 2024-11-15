@@ -20,7 +20,7 @@ type field_elt =
 
 type elt =
   | Top
-  | Fields of field_elt Global_flow_graph.Field.Map.t
+  | Fields of { fields : field_elt Global_flow_graph.Field.Map.t; uses : Code_id_or_name.Set.t }
   | Bottom
 
 module Dual_graph : sig

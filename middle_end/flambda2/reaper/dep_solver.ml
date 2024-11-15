@@ -218,7 +218,7 @@ type field_elt =
 (** Represents the part of a value that can be accessed *)
 type elt =
   | Top  (** Value completely accessed *)
-  | Fields of field_elt Field.Map.t
+  | Fields of { fields : field_elt Field.Map.t; uses : Code_id_or_name.Set.t }
       (** Only the given fields are accessed, each field either being completely accessed for [Field_top]
       or corresponding to the union of all the elements corresponding to all the
       [Code_id_or_name.t] in the set for [Field_vals]. *)
@@ -234,7 +234,7 @@ let pp_elt ppf elt =
   | Top -> Format.pp_print_string ppf "⊤"
   | Bottom -> Format.pp_print_string ppf "⊥"
   | Fields fields ->
-    Format.fprintf ppf "{ %a }" (Field.Map.print pp_field_elt) fields
+    Format.fprintf ppf "{ fields: %a; uses : %a }" (Field.Map.print pp_field_elt) fields.fields Code_id_or_name.Set.print fields.uses
 
 module Graph = struct
   type graph = Global_flow_graph.graph
@@ -269,9 +269,10 @@ module Graph = struct
     | Bottom, _ | _, Top -> true
     | (Top | Fields _), Bottom | Top, Fields _ -> false
     | Fields f1, Fields f2 ->
-      if f1 == f2
+      if f1.uses == f2.uses && f1.fields == f2.fields
       then true
       else
+        Code_id_or_name.Set.subset f1.uses f2.uses &&
         let ok = ref true in
         ignore
           (Field.Map.merge
@@ -284,7 +285,7 @@ module Graph = struct
                | Some (Field_vals e1), Some (Field_vals e2) ->
                  if not (Code_id_or_name.Set.subset e1 e2) then ok := false);
                None)
-             f1 f2);
+             f1.fields f2.fields);
         !ok
 
   let elt_deps elt =
@@ -296,7 +297,7 @@ module Graph = struct
           match v with
           | Field_top -> acc
           | Field_vals v -> Code_id_or_name.Set.union v acc)
-        f Code_id_or_name.Set.empty
+        f.fields Code_id_or_name.Set.empty
 
   let join_elt e1 e2 =
     if e1 == e2
@@ -306,14 +307,19 @@ module Graph = struct
       | Bottom, e | e, Bottom -> e
       | Top, _ | _, Top -> Top
       | Fields f1, Fields f2 ->
-        Fields
+        let fields =
           (Field.Map.union
              (fun _ e1 e2 ->
                match e1, e2 with
                | Field_top, _ | _, Field_top -> Some Field_top
                | Field_vals e1, Field_vals e2 ->
                  Some (Field_vals (Code_id_or_name.Set.union e1 e2)))
-             f1 f2)
+             f1.fields f2.fields)
+        in
+        let uses =
+          Code_id_or_name.Set.union f1.uses f2.uses
+        in
+        Fields { fields; uses }
 
   let make_field_elt uses (k : Code_id_or_name.t) =
     match Hashtbl.find_opt uses k with
@@ -328,8 +334,14 @@ module Graph = struct
       match dep with
       | Alias _ -> elt
       | Use _ -> Top
-      | Accessor { relation; _ } ->
-        Fields (Field.Map.singleton relation (make_field_elt uses k))
+      | Accessor { relation; target } ->
+        let fields =
+          Field.Map.singleton relation (make_field_elt uses k)
+        in
+        let uses =
+          Code_id_or_name.Set.singleton (Code_id_or_name.name target)
+        in
+        Fields { fields; uses }
       | Constructor { relation; _ } -> (
         match elt with
         | Bottom -> assert false
@@ -337,7 +349,7 @@ module Graph = struct
         | Fields fields -> (
           try
             let elems =
-              match Field.Map.find_opt relation fields with
+              match Field.Map.find_opt relation fields.fields with
               | None -> Code_id_or_name.Set.empty
               | Some Field_top -> raise Exit
               | Some (Field_vals s) -> s
@@ -659,7 +671,7 @@ let cannot_unbox _id elt =
         match[@ocaml.warning "-4"] field with
         | Code_of_closure | Apply _ -> true
         | _ -> false)
-      fields
+      fields.fields
 
 let fixpoint (graph_new : Global_flow_graph.graph) =
   let result = Hashtbl.create 17 in
