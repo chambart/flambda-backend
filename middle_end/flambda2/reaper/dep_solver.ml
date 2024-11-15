@@ -678,24 +678,25 @@ let problematic_uses ~for_destructuring_value elt =
        && Field.Map.exists
             (fun (field : Field.t) _ ->
               match[@ocaml.warning "-4"] field with
-              (* We probably cannot destructure a closure that is called somewhere. *)
+              (* We probably cannot destructure a closure that is called
+                 somewhere. *)
               | Code_of_closure | Apply _ -> true
               | _ -> false)
             fields
     then Cannot_unbox_due_to_uses
     else No_problem { use_aliases = uses }
 
-let can_change_representation ~for_destructuring_value dual graph allocation_id =
-  (* The representation can be changed only if we can track its uses.
-     And all the use sites can be changed. If a different value where
-     to flow to that same use site, it would not be possible to change the representation.
+let can_change_representation ~for_destructuring_value dual graph allocation_id
+    =
+  (* The representation can be changed only if we can track its uses. And all
+     the use sites can be changed. If a different value where to flow to that
+     same use site, it would not be possible to change the representation.
 
-     Note: This alias constraint is not a strict requirement, we might lighten that later.
-  *)
+     Note: This alias constraint is not a strict requirement, we might lighten
+     that later. *)
   let uses =
     match Hashtbl.find_opt graph allocation_id with
-    | None ->
-      Bottom
+    | None -> Bottom
     | Some uses -> uses
   in
   match problematic_uses ~for_destructuring_value uses with
@@ -705,8 +706,7 @@ let can_change_representation ~for_destructuring_value dual graph allocation_id 
       match (Hashtbl.find_opt dual alias : Dual_graph.elt option) with
       | None -> assert false
       | Some Bottom -> assert false
-      | Some Top ->
-          false
+      | Some Top -> false
       | Some (Block { sources; _ }) ->
         Code_id_or_name.Set.equal
           (Code_id_or_name.Set.singleton allocation_id)
@@ -722,8 +722,8 @@ let map_from_allocation_points_to_dominated dual =
       match elt with
       | Bottom | Top -> ()
       | Block { sources; _ } -> (
-        (* Sources are only allocation points, so
-           if sources is not a singleton, then id has no dominator that can be an allocation point. *)
+        (* Sources are only allocation points, so if sources is not a singleton,
+           then id has no dominator that can be an allocation point. *)
         match Code_id_or_name.Set.get_singleton sources with
         | None -> ()
         | Some elt ->
@@ -736,10 +736,14 @@ let map_from_allocation_points_to_dominated dual =
     dual;
   !map
 
-let can_unbox dual dual_graph graph ~dominated_by_allocation_points allocation_id =
-  can_change_representation ~for_destructuring_value:true dual graph allocation_id
+let can_unbox dual dual_graph graph ~dominated_by_allocation_points
+    allocation_id =
+  can_change_representation ~for_destructuring_value:true dual graph
+    allocation_id
   &&
-  let aliases = Code_id_or_name.Map.find allocation_id dominated_by_allocation_points in
+  let aliases =
+    Code_id_or_name.Map.find allocation_id dominated_by_allocation_points
+  in
   Code_id_or_name.Set.for_all
     (fun alias ->
       let edges = Code_id_or_name.Map.find alias dual_graph in
@@ -748,9 +752,35 @@ let can_unbox dual dual_graph graph ~dominated_by_allocation_points allocation_i
           match edge with
           | Alias _ | Accessor _ -> true
           | Constructor { target; relation } ->
-            ignore relation;
-            (* TODO check that this is sensible to unbox *)
-            can_change_representation ~for_destructuring_value:false dual graph target)
+            let target_uses =
+              match Hashtbl.find_opt graph target with
+              | None -> Bottom
+              | Some t -> t
+            in
+            let relation_is_used =
+              match target_uses with
+              | Bottom -> false
+              | Top -> true
+              | Fields { fields; _ } -> Field.Map.mem relation fields
+            in
+            (not relation_is_used)
+            ||
+            let relation_prevents_unboxing =
+              match relation with
+              | Field.Block _ -> false
+              | Field.Value_slot _ -> false
+              | Field.Function_slot _ -> true
+              | Field.Code_of_closure -> true
+              | Field.Is_int -> true
+              | Field.Get_tag -> true
+              | Field.Apply (_, _) ->
+                (* This requires unboxing returns of function, maybe later *)
+                let unclear = true in
+                unclear
+            in
+            (not relation_prevents_unboxing)
+            && can_change_representation ~for_destructuring_value:false dual
+                 graph target)
         edges)
     aliases
 
@@ -766,19 +796,25 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
   let aliases = Hashtbl.create 17 in
   Alias_solver.fixpoint_topo dual_graph roots aliases;
   Format.eprintf "@.SAUCISSE XXX@.@.@.";
-  let dominated_by_allocation_points = map_from_allocation_points_to_dominated aliases in
+  let dominated_by_allocation_points =
+    map_from_allocation_points_to_dominated aliases
+  in
   Hashtbl.iter
     (fun code_or_name elt ->
-      if can_change_representation ~for_destructuring_value:true aliases result code_or_name
+      if can_change_representation ~for_destructuring_value:true aliases result
+           code_or_name
       then
-        let path = Code_id_or_name.Map.find code_or_name dominated_by_allocation_points in
+        let path =
+          Code_id_or_name.Map.find code_or_name dominated_by_allocation_points
+        in
         Format.eprintf "%a => %a@.%a@." Code_id_or_name.print code_or_name
           pp_elt elt Code_id_or_name.Set.print path)
     result;
   Format.eprintf "@.UNBOXABLE XXX@.@.@.";
   Hashtbl.iter
     (fun code_or_name _elt ->
-      if can_unbox aliases dual_graph result ~dominated_by_allocation_points code_or_name
+      if can_unbox aliases dual_graph result ~dominated_by_allocation_points
+           code_or_name
       then Format.eprintf "%a@." Code_id_or_name.print code_or_name)
     result;
   { uses = result; aliases; dual_graph }
