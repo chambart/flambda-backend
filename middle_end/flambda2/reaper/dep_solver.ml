@@ -218,7 +218,10 @@ type field_elt =
 (** Represents the part of a value that can be accessed *)
 type elt =
   | Top  (** Value completely accessed *)
-  | Fields of { fields : field_elt Field.Map.t; uses : Code_id_or_name.Set.t }
+  | Fields of
+      { fields : field_elt Field.Map.t;
+        uses : Code_id_or_name.Set.t
+      }
       (** Only the given fields are accessed, each field either being completely accessed for [Field_top]
       or corresponding to the union of all the elements corresponding to all the
       [Code_id_or_name.t] in the set for [Field_vals]. *)
@@ -234,7 +237,9 @@ let pp_elt ppf elt =
   | Top -> Format.pp_print_string ppf "⊤"
   | Bottom -> Format.pp_print_string ppf "⊥"
   | Fields fields ->
-    Format.fprintf ppf "{ fields: %a; uses : %a }" (Field.Map.print pp_field_elt) fields.fields Code_id_or_name.Set.print fields.uses
+    Format.fprintf ppf "{ fields: %a; uses : %a }"
+      (Field.Map.print pp_field_elt)
+      fields.fields Code_id_or_name.Set.print fields.uses
 
 module Graph = struct
   type graph = Global_flow_graph.graph
@@ -272,7 +277,8 @@ module Graph = struct
       if f1.uses == f2.uses && f1.fields == f2.fields
       then true
       else
-        Code_id_or_name.Set.subset f1.uses f2.uses &&
+        Code_id_or_name.Set.subset f1.uses f2.uses
+        &&
         let ok = ref true in
         ignore
           (Field.Map.merge
@@ -308,17 +314,15 @@ module Graph = struct
       | Top, _ | _, Top -> Top
       | Fields f1, Fields f2 ->
         let fields =
-          (Field.Map.union
-             (fun _ e1 e2 ->
-               match e1, e2 with
-               | Field_top, _ | _, Field_top -> Some Field_top
-               | Field_vals e1, Field_vals e2 ->
-                 Some (Field_vals (Code_id_or_name.Set.union e1 e2)))
-             f1.fields f2.fields)
+          Field.Map.union
+            (fun _ e1 e2 ->
+              match e1, e2 with
+              | Field_top, _ | _, Field_top -> Some Field_top
+              | Field_vals e1, Field_vals e2 ->
+                Some (Field_vals (Code_id_or_name.Set.union e1 e2)))
+            f1.fields f2.fields
         in
-        let uses =
-          Code_id_or_name.Set.union f1.uses f2.uses
-        in
+        let uses = Code_id_or_name.Set.union f1.uses f2.uses in
         Fields { fields; uses }
 
   let make_field_elt uses (k : Code_id_or_name.t) =
@@ -335,9 +339,7 @@ module Graph = struct
       | Alias _ -> elt
       | Use _ -> Top
       | Accessor { relation; target } ->
-        let fields =
-          Field.Map.singleton relation (make_field_elt uses k)
-        in
+        let fields = Field.Map.singleton relation (make_field_elt uses k) in
         let uses =
           Code_id_or_name.Set.singleton (Code_id_or_name.name target)
         in
@@ -661,17 +663,65 @@ let pp_dual_result ppf (res : Dual_graph.state) =
   in
   Format.fprintf ppf "@[<hov 2>{@ %a@ }@]" pp elts
 
-let cannot_unbox _id elt =
+type problematic_uses =
+  | Cannot_unbox_due_to_uses
+  | No_problem of { use_aliases : Code_id_or_name.Set.t }
+
+let problematic_uses elt =
   match elt with
-  | Top -> true
-  | Bottom -> true
-  | Fields fields ->
-    Field.Map.exists
-      (fun (field : Field.t) _ ->
-        match[@ocaml.warning "-4"] field with
-        | Code_of_closure | Apply _ -> true
-        | _ -> false)
-      fields.fields
+  | Top -> Cannot_unbox_due_to_uses
+  | Bottom ->
+    (* No_problem { use_aliases = Code_id_or_name.Set.empty } *)
+    Cannot_unbox_due_to_uses
+  | Fields { fields; uses } ->
+    if false
+       && Field.Map.exists
+            (fun (field : Field.t) _ ->
+              match[@ocaml.warning "-4"] field with
+              | Code_of_closure | Apply _ -> true
+              | _ -> false)
+            fields
+    then Cannot_unbox_due_to_uses
+    else No_problem { use_aliases = uses }
+
+let can_change_representation dual graph allocation_id =
+  match Hashtbl.find_opt graph allocation_id with
+  | None -> assert false
+  | Some uses -> (
+    match problematic_uses uses with
+    | Cannot_unbox_due_to_uses -> false
+    | No_problem { use_aliases } ->
+      let check_alias alias =
+        match (Hashtbl.find_opt dual alias : Dual_graph.elt option) with
+        | None -> assert false
+        | Some Bottom -> assert false
+        | Some Top -> false
+        | Some (Block { sources; _ }) ->
+          Code_id_or_name.Set.equal
+            (Code_id_or_name.Set.singleton allocation_id)
+            sources
+      in
+      check_alias allocation_id
+      && Code_id_or_name.Set.for_all check_alias use_aliases)
+
+let invert_sources dual =
+  let map = ref Code_id_or_name.Map.empty in
+  Hashtbl.iter
+    (fun id (elt : Dual_graph.elt) ->
+      match elt with
+      | Bottom | Top -> ()
+      | Block { sources; _ } -> (
+        match Code_id_or_name.Set.get_singleton sources with
+        | None -> ()
+        | Some elt ->
+          map
+            := Code_id_or_name.Map.update elt
+                 (function
+                   | None -> Some (Code_id_or_name.Set.singleton id)
+                   | Some set -> Some (Code_id_or_name.Set.add id set))
+                 !map))
+    dual;
+  !map
 
 let fixpoint (graph_new : Global_flow_graph.graph) =
   let result = Hashtbl.create 17 in
@@ -681,13 +731,17 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
   in
   Solver.fixpoint_topo graph_new uses result;
   Solver.check_fixpoint graph_new uses result;
-  Hashtbl.iter
-    (fun code_or_name elt ->
-      if not (cannot_unbox code_or_name elt)
-      then
-        Format.printf "%a => %a@." Code_id_or_name.print code_or_name pp_elt elt)
-    result;
   let dual_graph, roots = Dual_graph.build_dual graph_new result in
   let aliases = Hashtbl.create 17 in
   Alias_solver.fixpoint_topo dual_graph roots aliases;
+  Format.eprintf "@.SAUCISSE XXX@.@.@.";
+  let inverted = invert_sources aliases in
+  Hashtbl.iter
+    (fun code_or_name elt ->
+      if can_change_representation aliases result code_or_name
+      then
+        let path = Code_id_or_name.Map.find code_or_name inverted in
+        Format.eprintf "%a => %a@.%a@." Code_id_or_name.print code_or_name
+          pp_elt elt Code_id_or_name.Set.print path)
+    result;
   { uses = result; aliases; dual_graph }
