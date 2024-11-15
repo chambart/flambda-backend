@@ -23,7 +23,7 @@ module Field : sig
     | Direct_code_pointer
 
   type t =
-    | Block of int (* nth field of a block *)
+    | Block of int * Flambda_kind.t (* nth field of a block *)
     | Value_slot of Value_slot.t
     | Function_slot of Function_slot.t
     | Code_of_closure (* code_id in a set of closurse *)

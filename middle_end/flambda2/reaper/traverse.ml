@@ -259,18 +259,22 @@ and traverse_prim denv acc ~bound_pattern (prim : Flambda_primitive.t) ~default
     Acc.kind name kind acc
   in
   match[@ocaml.warning "-4"] prim with
-  | Variadic (Make_block (_, _mutability, _), fields) ->
+  | Variadic (Make_block (block_kind, _mutability, _), fields) ->
+    let _tag, block_shape = Flambda_primitive.Block_kind.to_shape block_kind in
     List.iteri
       (fun i field ->
+        let kind = Flambda_kind.Block_shape.element_kind block_shape i in
         Simple.pattern_match field
           ~name:(fun name ~coercion:_ ->
             default_bp acc
               (Constructor
-                 { relation = Block i; target = Code_id_or_name.name name }))
+                 { relation = Block (i, kind);
+                   target = Code_id_or_name.name name
+                 }))
           ~const:(fun _ ->
             default_bp acc
               (Constructor
-                 { relation = Block i;
+                 { relation = Block (i, kind);
                    target = Code_id_or_name.name denv.all_constants
                  })))
       fields
@@ -290,11 +294,12 @@ and traverse_prim denv acc ~bound_pattern (prim : Flambda_primitive.t) ~default
     in
     default_bp acc
       (Accessor { relation = Value_slot value_slot; target = block })
-  | Unary (Block_load { kind = _; mut = _; field }, block) ->
+  | Unary (Block_load { kind; mut = _; field }, block) ->
     (* Loads from mutable blocks are also tracked here. This is ok because
        stores automatically escape the block. CR ncourant: think about whether
        we can make stores only escape the corresponding fields of the block
        instead of the whole block. *)
+    let kind = Flambda_primitive.Block_access_kind.element_kind_for_load kind in
     Simple.pattern_match block
       ~const:(fun _ ->
         (* CR ncourant: it seems this const case can happen with the
@@ -308,13 +313,15 @@ and traverse_prim denv acc ~bound_pattern (prim : Flambda_primitive.t) ~default
          *)
         default_bp acc
           (Accessor
-             { relation = Block (Targetint_31_63.to_int field);
+             { relation = Block (Targetint_31_63.to_int field, kind);
                target = denv.all_constants
              }))
       ~name:(fun block ~coercion:_ ->
         default_bp acc
           (Accessor
-             { relation = Block (Targetint_31_63.to_int field); target = block }))
+             { relation = Block (Targetint_31_63.to_int field, kind);
+               target = block
+             }))
   | Unary (Is_int _, arg) ->
     Simple.pattern_match arg
       ~name:(fun name ~coercion:_ ->
@@ -386,17 +393,25 @@ and traverse_static_consts denv acc ~(bound_pattern : Bound_pattern.t) group =
         acc)
     ~block_like:(fun () symbol static_const ->
       let name = Name.symbol symbol in
+      let[@inline always] block_field_kind i =
+        match[@ocaml.warning "-4"] static_const with
+        | Block (_, _, shape, _) ->
+          Flambda_kind.Scannable_block_shape.element_kind shape i
+        | Immutable_value_array _ -> Flambda_kind.value
+        | _ -> assert false
+      in
       match[@ocaml.warning "-4"] static_const with
       | Block (_, _, _, fields) | Immutable_value_array fields ->
         List.iteri
           (fun i (field : Simple.With_debuginfo.t) ->
+            let kind = block_field_kind i in
             Simple.pattern_match
               (Simple.With_debuginfo.simple field)
               ~name:(fun field_name ~coercion:_ ->
                 Acc.record_dep
                   (Code_id_or_name.name name)
                   (Constructor
-                     { relation = Block i;
+                     { relation = Block (i, kind);
                        target = Code_id_or_name.name field_name
                      })
                   acc)
@@ -404,7 +419,7 @@ and traverse_static_consts denv acc ~(bound_pattern : Bound_pattern.t) group =
                 Acc.record_dep
                   (Code_id_or_name.name name)
                   (Constructor
-                     { relation = Block i;
+                     { relation = Block (i, kind);
                        target = Code_id_or_name.name denv.all_constants
                      })
                   acc))

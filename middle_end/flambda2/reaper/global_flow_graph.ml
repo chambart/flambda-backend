@@ -24,7 +24,7 @@ module Field = struct
       | Direct_code_pointer
 
     type t =
-      | Block of int
+      | Block of int * Flambda_kind.t
       | Value_slot of Value_slot.t
       | Function_slot of Function_slot.t
       | Code_of_closure
@@ -45,7 +45,9 @@ module Field = struct
 
     let compare t1 t2 =
       match t1, t2 with
-      | Block n1, Block n2 -> Int.compare n1 n2
+      | Block (n1, k1), Block (n2, k2) ->
+        let c = Int.compare n1 n2 in
+        if c <> 0 then c else Flambda_kind.compare k1 k2
       | Value_slot v1, Value_slot v2 -> Value_slot.compare v1 v2
       | Function_slot f1, Function_slot f2 -> Function_slot.compare f1 f2
       | Code_of_closure, Code_of_closure -> 0
@@ -90,7 +92,7 @@ module Field = struct
       | Direct_code_pointer -> "Direct_code_pointer"
 
     let print ppf = function
-      | Block i -> Format.fprintf ppf "%i" i
+      | Block (i, k) -> Format.fprintf ppf "%i_%a" i Flambda_kind.print k
       | Value_slot s -> Format.fprintf ppf "%a" Value_slot.print s
       | Function_slot f -> Format.fprintf ppf "%a" Function_slot.print f
       | Code_of_closure -> Format.fprintf ppf "Code"
