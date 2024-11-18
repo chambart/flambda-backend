@@ -784,6 +784,8 @@ let can_unbox dual dual_graph graph ~dominated_by_allocation_points
         edges)
     aliases
 
+type assigned = Simple.t Field.Map.t Code_id_or_name.Map.t
+
 let fixpoint (graph_new : Global_flow_graph.graph) =
   let result = Hashtbl.create 17 in
   let uses =
@@ -811,10 +813,44 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
           pp_elt elt Code_id_or_name.Set.print path)
     result;
   Format.eprintf "@.UNBOXABLE XXX@.@.@.";
+  let assigned : assigned ref = ref Code_id_or_name.Map.empty in
   Hashtbl.iter
     (fun code_or_name _elt ->
       if can_unbox aliases dual_graph result ~dominated_by_allocation_points
            code_or_name
-      then Format.eprintf "%a@." Code_id_or_name.print code_or_name)
+      then (
+        Format.eprintf "%a@." Code_id_or_name.print code_or_name;
+        let to_patch =
+          Code_id_or_name.Map.find code_or_name dominated_by_allocation_points
+        in
+        Code_id_or_name.Set.iter
+          (fun to_patch ->
+            let fields =
+              match Hashtbl.find_opt result to_patch with
+              | None | Some Bottom -> Field.Map.empty
+              | Some Top ->
+                Misc.fatal_errorf
+                  "Unboxable variable flow to Top uses: %a -> %a"
+                  Code_id_or_name.print code_or_name Code_id_or_name.print
+                  to_patch
+              | Some (Fields { fields; _ }) ->
+                Field.Map.mapi
+                  (fun field _elt ->
+                    let new_name =
+                      (* TODO make proper to_name function for that *)
+                      Flambda_colours.without_colours ~f:(fun () ->
+                          Format.asprintf "%a_into_%a_field_%a"
+                            Code_id_or_name.print code_or_name
+                            Code_id_or_name.print to_patch Field.print field)
+                    in
+                    (* TODO let ghost for debugging *)
+                    Simple.var (Variable.create new_name))
+                  fields
+            in
+            assigned := Code_id_or_name.Map.add to_patch fields !assigned)
+          to_patch))
     result;
+  Format.printf "new vars: %a"
+    (Code_id_or_name.Map.print (Field.Map.print Simple.print))
+    !assigned;
   { uses = result; aliases; dual_graph }
