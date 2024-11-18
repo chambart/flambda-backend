@@ -580,7 +580,39 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                       (Named.create_simple (Simple.var arg))
                       ~body:hole)
                   fields hole
-              | _ -> assert false)
+              | Simple arg ->
+                let fields =
+                  Code_id_or_name.Map.find
+                    (Code_id_or_name.var (Bound_var.var bv))
+                    env.uses.unboxed_fields
+                in
+                let arg_fields =
+                  let arg =
+                    Simple.pattern_match
+                      ~name:(fun x ~coercion:_ -> x)
+                      ~const:(fun _ -> assert false)
+                      arg
+                  in
+                  Code_id_or_name.Map.find (Code_id_or_name.name arg)
+                    env.uses.unboxed_fields
+                in
+                Global_flow_graph.Field.Map.fold
+                  (fun (field : Global_flow_graph.Field.t) var hole ->
+                    let arg =
+                      Global_flow_graph.Field.Map.find field arg_fields
+                    in
+                    let bp =
+                      Bound_pattern.singleton
+                        (Bound_var.create var Name_mode.normal)
+                    in
+                    RE.create_let bp
+                      (Named.create_simple (Simple.var arg))
+                      ~body:hole)
+                  fields hole
+              | named ->
+                  Format.printf "BOUM ? %a@."
+                    Named.print named;
+              assert false)
             | _ -> assert false)
           | _ ->
             let defining_expr = rewrite_named kinds env defining_expr in
