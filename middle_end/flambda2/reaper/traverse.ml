@@ -278,6 +278,11 @@ and traverse_prim denv acc ~bound_pattern (prim : Flambda_primitive.t) ~default
                    target = Code_id_or_name.name denv.all_constants
                  })))
       fields
+  | Unary (Opaque_identity { middle_end_only = true; _ }, arg) ->
+      (* XXX TO REMOVE !!! *)
+    Simple.pattern_match arg
+      ~name:(fun arg ~coercion:_ -> default_bp acc (Alias { target = arg }))
+      ~const:(fun _ -> ())
   | Unary (Project_function_slot { move_from = _; move_to }, block) ->
     let block =
       Simple.pattern_match block

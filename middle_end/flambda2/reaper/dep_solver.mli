@@ -41,10 +41,13 @@ type use_result = (Code_id_or_name.t, elt) Hashtbl.t
 
 type alias_result = (Code_id_or_name.t, Dual_graph.elt) Hashtbl.t
 
+type assigned = Variable.t Global_flow_graph.Field.Map.t Code_id_or_name.Map.t
+
 type result =
   { uses : use_result;
     aliases : alias_result;
-    dual_graph : Global_flow_graph.Dual.graph
+    dual_graph : Global_flow_graph.Dual.graph;
+    unboxed_fields : assigned;
   }
 
 val pp_elt : Format.formatter -> elt -> unit

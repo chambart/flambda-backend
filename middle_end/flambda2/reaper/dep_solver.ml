@@ -634,10 +634,13 @@ type use_result = Graph.state
 
 type alias_result = Dual_graph.state
 
+type assigned = Variable.t Field.Map.t Code_id_or_name.Map.t
+
 type result =
   { uses : use_result;
     aliases : alias_result;
-    dual_graph : Dual_graph.graph
+    dual_graph : Dual_graph.graph;
+    unboxed_fields : assigned;
   }
 
 let pp_result ppf (res : use_result) =
@@ -784,8 +787,6 @@ let can_unbox dual dual_graph graph ~dominated_by_allocation_points
         edges)
     aliases
 
-type assigned = Simple.t Field.Map.t Code_id_or_name.Map.t
-
 let fixpoint (graph_new : Global_flow_graph.graph) =
   let result = Hashtbl.create 17 in
   let uses =
@@ -844,13 +845,13 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
                             Code_id_or_name.print to_patch Field.print field)
                     in
                     (* TODO let ghost for debugging *)
-                    Simple.var (Variable.create new_name))
+                    Variable.create new_name)
                   fields
             in
             assigned := Code_id_or_name.Map.add to_patch fields !assigned)
           to_patch))
     result;
   Format.printf "new vars: %a"
-    (Code_id_or_name.Map.print (Field.Map.print Simple.print))
+    (Code_id_or_name.Map.print (Field.Map.print Variable.print))
     !assigned;
-  { uses = result; aliases; dual_graph }
+  { uses = result; aliases; dual_graph; unboxed_fields = !assigned }

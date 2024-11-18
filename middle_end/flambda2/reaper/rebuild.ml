@@ -18,6 +18,7 @@ open! Rev_expr
 module Float = Numeric_types.Float_by_bit_pattern
 module Float32 = Numeric_types.Float32_by_bit_pattern
 module RE = Rebuilt_expr
+module Field = Global_flow_graph.Field
 
 type rev_expr = Rev_expr.t
 
@@ -200,7 +201,8 @@ let rewrite_set_of_closures bound (env : env) value_slots alloc_mode
     with
     | None | Some Bottom -> false
     | Some Top -> true
-    | Some (Fields f) -> Global_flow_graph.Field.Map.mem Code_of_closure f.fields
+    | Some (Fields f) ->
+      Global_flow_graph.Field.Map.mem Code_of_closure f.fields
   in
   let value_slots =
     Value_slot.Map.filter
@@ -235,9 +237,35 @@ let rewrite_set_of_closures bound (env : env) value_slots alloc_mode
   in
   Set_of_closures.create ~value_slots alloc_mode function_decls
 
+let simple_in_unboxable env simple =
+  Simple.pattern_match
+    ~const:(fun _ -> false)
+    ~name:(fun name ~coercion:_ ->
+      Code_id_or_name.Map.mem
+        (Code_id_or_name.name name)
+        env.uses.unboxed_fields)
+    simple
+
 let rewrite_named kinds env (named : Named.t) =
-  match named with
+  match[@ocaml.warning "-4"] named with
   | Simple simple -> Named.create_simple (rewrite_simple kinds env simple)
+  | Prim (Unary (Block_load { kind; field; _ }, arg), _dbg)
+    when simple_in_unboxable env arg ->
+    let arg =
+      Simple.pattern_match
+        ~const:(fun _ -> assert false)
+        ~name:(fun name ~coercion:_ -> Code_id_or_name.name name)
+        arg
+    in
+    let kind = Flambda_primitive.Block_access_kind.element_kind_for_load kind in
+    let field =
+      Global_flow_graph.Field.Block (Targetint_31_63.to_int field, kind)
+    in
+    let var =
+      Field.Map.find field
+        (Code_id_or_name.Map.find arg env.uses.unboxed_fields)
+    in
+    Named.create_simple (Simple.var var)
   | Prim (prim, dbg) ->
     let prim = Flambda_primitive.map_args (rewrite_simple kinds env) prim in
     Named.create_prim prim dbg
@@ -483,8 +511,82 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                    set_of_closures;
             let_.bound_pattern, Named.create_set_of_closures set_of_closures
         in
-        let defining_expr = rewrite_named kinds env defining_expr in
-        RE.create_let bp defining_expr ~body:hole
+        begin
+          match let_.bound_pattern with
+          | Bound_pattern.Singleton bv
+            when Code_id_or_name.Map.mem
+                   (Code_id_or_name.var (Bound_var.var bv))
+                   env.uses.unboxed_fields -> (
+            Format.printf "TO unbox ici %a@." Bound_pattern.print bp;
+            match let_.defining_expr with
+            | Named named -> (
+              match named with
+              | Prim (Variadic (Make_block (_kind, _, _), args), _dbg) ->
+                let fields =
+                  Code_id_or_name.Map.find
+                    (Code_id_or_name.var (Bound_var.var bv))
+                    env.uses.unboxed_fields
+                in
+                Global_flow_graph.Field.Map.fold
+                  (fun (field : Global_flow_graph.Field.t) var hole ->
+                    let arg, _kind =
+                      match field with
+                      | Block (nth, kind) -> List.nth args nth, kind
+                      | Is_int ->
+                        ( Simple.untagged_const_false,
+                          Flambda_kind.naked_immediate )
+                      | Get_tag ->
+                        (* TODO *)
+                        assert false
+                      | Value_slot _ | Function_slot _ | Code_of_closure
+                      | Apply _ ->
+                        assert false
+                    in
+                    let bp =
+                      Bound_pattern.singleton
+                        (Bound_var.create var Name_mode.normal)
+                    in
+                    RE.create_let bp (Named.create_simple arg) ~body:hole)
+                  fields hole
+              | Prim
+                  ( Unary (Opaque_identity { middle_end_only = true; _ }, arg),
+                    _dbg ) ->
+                (* XXX TO REMOVE *)
+                let fields =
+                  Code_id_or_name.Map.find
+                    (Code_id_or_name.var (Bound_var.var bv))
+                    env.uses.unboxed_fields
+                in
+                let arg_fields =
+                  let arg =
+                    Simple.pattern_match
+                      ~name:(fun x ~coercion:_ -> x)
+                      ~const:(fun _ -> assert false)
+                      arg
+                  in
+                  Code_id_or_name.Map.find (Code_id_or_name.name arg)
+                    env.uses.unboxed_fields
+                in
+                Global_flow_graph.Field.Map.fold
+                  (fun (field : Global_flow_graph.Field.t) var hole ->
+                    let arg =
+                      Global_flow_graph.Field.Map.find field arg_fields
+                    in
+                    let bp =
+                      Bound_pattern.singleton
+                        (Bound_var.create var Name_mode.normal)
+                    in
+                    RE.create_let bp
+                      (Named.create_simple (Simple.var arg))
+                      ~body:hole)
+                  fields hole
+              | _ -> assert false)
+            | _ -> assert false)
+          | _ ->
+            let defining_expr = rewrite_named kinds env defining_expr in
+            RE.create_let bp defining_expr ~body:hole
+        end
+        [@ocaml.warning "-4"]
       in
       rebuild_holed kinds env let_.parent subexpr
     in
