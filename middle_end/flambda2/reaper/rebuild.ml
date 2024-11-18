@@ -610,9 +610,8 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                       ~body:hole)
                   fields hole
               | named ->
-                  Format.printf "BOUM ? %a@."
-                    Named.print named;
-              assert false)
+                Format.printf "BOUM ? %a@." Named.print named;
+                assert false)
             | _ -> assert false)
           | _ ->
             let defining_expr = rewrite_named kinds env defining_expr in

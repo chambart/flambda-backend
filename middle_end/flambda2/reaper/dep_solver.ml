@@ -640,7 +640,7 @@ type result =
   { uses : use_result;
     aliases : alias_result;
     dual_graph : Dual_graph.graph;
-    unboxed_fields : assigned;
+    unboxed_fields : assigned
   }
 
 let pp_result ppf (res : use_result) =

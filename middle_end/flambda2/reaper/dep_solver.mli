@@ -20,7 +20,10 @@ type field_elt =
 
 type elt =
   | Top
-  | Fields of { fields : field_elt Global_flow_graph.Field.Map.t; uses : Code_id_or_name.Set.t }
+  | Fields of
+      { fields : field_elt Global_flow_graph.Field.Map.t;
+        uses : Code_id_or_name.Set.t
+      }
   | Bottom
 
 module Dual_graph : sig
@@ -47,7 +50,7 @@ type result =
   { uses : use_result;
     aliases : alias_result;
     dual_graph : Global_flow_graph.Dual.graph;
-    unboxed_fields : assigned;
+    unboxed_fields : assigned
   }
 
 val pp_elt : Format.formatter -> elt -> unit

@@ -279,7 +279,7 @@ and traverse_prim denv acc ~bound_pattern (prim : Flambda_primitive.t) ~default
                  })))
       fields
   | Unary (Opaque_identity { middle_end_only = true; _ }, arg) ->
-      (* XXX TO REMOVE !!! *)
+    (* XXX TO REMOVE !!! *)
     Simple.pattern_match arg
       ~name:(fun arg ~coercion:_ -> default_bp acc (Alias { target = arg }))
       ~const:(fun _ -> ())
