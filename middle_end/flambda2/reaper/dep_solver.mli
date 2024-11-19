@@ -44,7 +44,11 @@ type use_result = (Code_id_or_name.t, elt) Hashtbl.t
 
 type alias_result = (Code_id_or_name.t, Dual_graph.elt) Hashtbl.t
 
-type assigned = Variable.t Global_flow_graph.Field.Map.t Code_id_or_name.Map.t
+type 'a unboxed_fields =
+  | Not_unboxed of 'a
+  | Unboxed of 'a unboxed_fields Global_flow_graph.Field.Map.t
+
+type assigned = Variable.t unboxed_fields Code_id_or_name.Map.t
 
 type result =
   { uses : use_result;

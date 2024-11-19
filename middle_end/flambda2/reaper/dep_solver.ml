@@ -634,7 +634,21 @@ type use_result = Graph.state
 
 type alias_result = Dual_graph.state
 
-type assigned = Variable.t Field.Map.t Code_id_or_name.Map.t
+type 'a unboxed_fields =
+  | Not_unboxed of 'a
+  | Unboxed of 'a unboxed_fields Field.Map.t
+
+let rec pp_unboxed_elt pp_unboxed ppf = function
+  | Not_unboxed x -> pp_unboxed ppf x
+  | Unboxed fields -> Field.Map.print (pp_unboxed_elt pp_unboxed) ppf fields
+
+(*
+type repr =
+  | Unboxed_fields of Variable.t unboxed_fields
+  | Changed_representation of Field.t unboxed_fields
+*)
+
+type assigned = Variable.t unboxed_fields Code_id_or_name.Map.t
 
 type result =
   { uses : use_result;
@@ -802,6 +816,12 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
   let dominated_by_allocation_points =
     map_from_allocation_points_to_dominated aliases
   in
+  let allocation_point_dominator =
+    Code_id_or_name.Map.fold (fun alloc_point dominated acc ->
+        Code_id_or_name.Set.fold (fun dom acc -> Code_id_or_name.Map.add dom alloc_point acc)
+        dominated acc)
+      dominated_by_allocation_points Code_id_or_name.Map.empty
+  in
   Hashtbl.iter
     (fun code_or_name elt ->
       if can_change_representation ~for_destructuring_value:true aliases result
@@ -815,43 +835,73 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
     result;
   Format.eprintf "@.UNBOXABLE XXX@.@.@.";
   let assigned : assigned ref = ref Code_id_or_name.Map.empty in
-  Hashtbl.iter
-    (fun code_or_name _elt ->
-      if can_unbox aliases dual_graph result ~dominated_by_allocation_points
-           code_or_name
-      then (
+  let to_unbox = Hashtbl.fold (fun code_or_name _elt to_unbox ->
+    if can_unbox aliases dual_graph result ~dominated_by_allocation_points code_or_name then
+      Code_id_or_name.Set.add code_or_name to_unbox
+    else
+      to_unbox
+    ) result Code_id_or_name.Set.empty
+  in
+  let has_to_be_unboxed code_or_name =
+    match Code_id_or_name.Map.find_opt code_or_name allocation_point_dominator with
+    | None -> false
+    | Some alloc_point -> Code_id_or_name.Set.mem alloc_point to_unbox
+  in
+  Code_id_or_name.Set.iter
+    (fun code_or_name ->
         Format.eprintf "%a@." Code_id_or_name.print code_or_name;
         let to_patch =
           Code_id_or_name.Map.find code_or_name dominated_by_allocation_points
         in
         Code_id_or_name.Set.iter
           (fun to_patch ->
+            let rec unbox_elt elt name_prefix =
+              match elt with
+              | Top ->
+                  Misc.fatal_errorf "Trying to unbox Top uses when unboxing %a" Code_id_or_name.print to_patch
+              | Bottom -> Unboxed Field.Map.empty
+              | Fields { fields; _ } ->
+                Unboxed (Field.Map.mapi
+                  (fun field field_elt ->
+                     let new_name = Flambda_colours.without_colours ~f:(fun () -> Format.asprintf "%s_field_%a" name_prefix Field.print field) in
+                    let[@local] default () =
+                    (* TODO let ghost for debugging *)
+                    Not_unboxed (Variable.create new_name)
+                    in
+                    match field_elt with
+                    | Field_top -> default ()
+                    | Field_vals flow_to ->
+                      if Code_id_or_name.Set.is_empty flow_to then
+                        Misc.fatal_errorf "Empty set in [Field_vals]";
+                      if Code_id_or_name.Set.for_all has_to_be_unboxed 
+                        flow_to
+                      then
+                        let elt = Code_id_or_name.Set.fold (fun flow acc ->
+                          match Hashtbl.find_opt result flow with
+                            | None -> Misc.fatal_errorf "%a is in [Field_vals] but not in result" Code_id_or_name.print flow
+                            | Some elt -> Graph.join_elt acc elt
+                          ) flow_to Bottom
+                        in
+                        unbox_elt elt new_name
+                      else if Code_id_or_name.Set.exists has_to_be_unboxed flow_to then
+                        Misc.fatal_errorf "Field %a of %s flows to both unboxed and non-unboxed variables"
+                          Field.print field name_prefix
+                      else
+                        default ()
+                  ) fields)
+            in
+            let new_name = Flambda_colours.without_colours ~f:(fun () ->
+                Format.asprintf "%a_into_%a" Code_id_or_name.print code_or_name Code_id_or_name.print to_patch)
+            in
             let fields =
               match Hashtbl.find_opt result to_patch with
-              | None | Some Bottom -> Field.Map.empty
-              | Some Top ->
-                Misc.fatal_errorf
-                  "Unboxable variable flow to Top uses: %a -> %a"
-                  Code_id_or_name.print code_or_name Code_id_or_name.print
-                  to_patch
-              | Some (Fields { fields; _ }) ->
-                Field.Map.mapi
-                  (fun field _elt ->
-                    let new_name =
-                      (* TODO make proper to_name function for that *)
-                      Flambda_colours.without_colours ~f:(fun () ->
-                          Format.asprintf "%a_into_%a_field_%a"
-                            Code_id_or_name.print code_or_name
-                            Code_id_or_name.print to_patch Field.print field)
-                    in
-                    (* TODO let ghost for debugging *)
-                    Variable.create new_name)
-                  fields
+              | None -> Unboxed Field.Map.empty
+              | Some elt -> unbox_elt elt new_name
             in
             assigned := Code_id_or_name.Map.add to_patch fields !assigned)
-          to_patch))
-    result;
+          to_patch)
+    to_unbox;
   Format.printf "new vars: %a"
-    (Code_id_or_name.Map.print (Field.Map.print Variable.print))
+    (Code_id_or_name.Map.print (pp_unboxed_elt Variable.print))
     !assigned;
   { uses = result; aliases; dual_graph; unboxed_fields = !assigned }
