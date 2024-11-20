@@ -250,16 +250,20 @@ let get_simple_unboxable env simple =
   Simple.pattern_match ~const:(fun _ -> assert false)
 ~name:(fun name ~coercion:_ -> Code_id_or_name.Map.find (Code_id_or_name.name name) env.uses.unboxed_fields) simple
 
+(* This is not symmetrical!! [fields1] must define a subset of [fields2], but does not have to define all of them. *)
+let rec fold2_unboxed_subset (f : 'a -> 'b -> 'c -> 'c) (fields1 : 'a Dep_solver.unboxed_fields) (fields2 : 'b Dep_solver.unboxed_fields) acc =
+  match fields1, fields2 with
+  | Not_unboxed x1, Not_unboxed x2 -> f x1 x2 acc
+  | Not_unboxed _, Unboxed _ | Unboxed _, Not_unboxed _ -> Misc.fatal_errorf "[fold2_unboxed_subset]"
+  | Unboxed fields1, Unboxed fields2 ->
+      Field.Map.fold (fun field f1 acc ->
+          let f2 = Field.Map.find field fields2 in
+          fold2_unboxed_subset f f1 f2 acc
+      ) fields1 acc
+
 let rewrite_named kinds env (named : Named.t) =
-  match[@ocaml.warning "-4"] named with
-  | Simple simple -> Named.create_simple (rewrite_simple kinds env simple)
-  | Prim (Unary (Block_load { kind; field; _ }, arg), _dbg)
-    when simple_in_unboxable env arg ->
+  let[@local] rewrite_field_access arg field =
     let arg = get_simple_unboxable env arg in
-    let kind = Flambda_primitive.Block_access_kind.element_kind_for_load kind in
-    let field =
-      Global_flow_graph.Field.Block (Targetint_31_63.to_int field, kind)
-    in
     let arg = match arg with
       | Dep_solver.Not_unboxed _ -> assert false
       | Dep_solver.Unboxed fields -> fields
@@ -273,6 +277,18 @@ let rewrite_named kinds env (named : Named.t) =
           Misc.fatal_errorf "Trying to bind non-unboxed to unboxed"
     in
     Named.create_simple (Simple.var var)
+  in
+  match[@ocaml.warning "-4"] named with
+  | Simple simple -> Named.create_simple (rewrite_simple kinds env simple)
+  | Prim (Unary (Block_load { kind; field; _ }, arg), _dbg)
+    when simple_in_unboxable env arg ->  
+    let kind = Flambda_primitive.Block_access_kind.element_kind_for_load kind in
+    let field =
+      Global_flow_graph.Field.Block (Targetint_31_63.to_int field, kind)
+    in
+    rewrite_field_access arg field
+  | Prim (Unary (Project_value_slot { value_slot; _ }, arg), _dbg) when simple_in_unboxable env arg ->
+      rewrite_field_access arg (Global_flow_graph.Field.Value_slot value_slot )
   | Prim (prim, dbg) ->
     let prim = Flambda_primitive.map_args (rewrite_simple kinds env) prim in
     Named.create_prim prim dbg
@@ -416,20 +432,13 @@ and rebuild_function_params_and_body (kinds : Flambda_kind.t Name.Map.t)
     ~body:body.expr ~free_names_of_body:(Known body.free_names) ~my_closure
     ~my_region ~my_ghost_region ~my_depth
 
+
+
 and bind_fields fields arg_fields hole =
-                  match fields, arg_fields with
-                  | Dep_solver.Not_unboxed var, Dep_solver.Not_unboxed arg ->
+  fold2_unboxed_subset (fun var arg hole ->
                       let bp = Bound_pattern.singleton (Bound_var.create var Name_mode.normal) in
                       RE.create_let bp (Named.create_simple (Simple.var arg)) ~body:hole
-                  | Dep_solver.Not_unboxed _, Dep_solver.Unboxed _ ->
-                      Misc.fatal_errorf "Cannot create a let-binding from a non-unboxed value to an unboxed value"
-                  | Dep_solver.Unboxed _, Dep_solver.Not_unboxed _ ->
-                      Misc.fatal_errorf "Cannot create a let-binding from an unboxed value to a non-unboxed value"
-                  | Dep_solver.Unboxed fields, Dep_solver.Unboxed arg_fields ->
-                      Field.Map.fold (fun field f hole ->
-                          let arg = Field.Map.find field arg_fields in
-                          bind_fields f arg hole
-                        ) fields hole
+    ) fields arg_fields hole
 
 and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
     (rev_expr : rev_expr_holed) (hole : RE.t) : RE.t =
@@ -613,17 +622,39 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                         ) fields hole
                 in
                 bind_fields fields arg_fields hole
-              | Prim (Unary (Block_load { field; kind; _ }, arg), _dbg) ->
-                let arg = get_simple_unboxable env arg in
-                (* TODO this will crash when loading unboxed from representation-changed block! *)
+              | Prim (Unary (Block_load { field; kind; _ }, arg), dbg) ->
+                let field =
+                  Field.Block (Targetint_31_63.to_int field, Flambda_primitive.Block_access_kind.element_kind_for_load kind) in
+                let oarg = arg in
+                let arg = Simple.pattern_match arg ~const:(fun _ -> Misc.fatal_error "Loading unboxed from constant") ~name:(fun name ~coercion:_ -> name) in
+                let arg = Code_id_or_name.name arg in
+                begin
+                  match Code_id_or_name.Map.find_opt arg env.uses.unboxed_fields with
+                  | Some arg ->
                 let arg = match arg with
                   | Dep_solver.Not_unboxed _ -> assert false
                   | Dep_solver.Unboxed fields -> fields
                 in
-                let field =
-                  Field.Block (Targetint_31_63.to_int field, Flambda_primitive.Block_access_kind.element_kind_for_load kind) in
                 let fields = Code_id_or_name.Map.find (Code_id_or_name.var (Bound_var.var bv)) env.uses.unboxed_fields in
                 bind_fields fields (Field.Map.find field arg) hole
+                  | None ->
+                      assert (Code_id_or_name.Map.mem arg env.uses.changed_representation);
+                      let arg = Code_id_or_name.Map.find arg env.uses.changed_representation in
+                      let arg = Field.Map.find field (match arg with Dep_solver.Not_unboxed _ -> assert false | Dep_solver.Unboxed fields -> fields) in
+                      let to_bind = Code_id_or_name.Map.find (Code_id_or_name.var (Bound_var.var bv)) env.uses.unboxed_fields in
+                      fold2_unboxed_subset (fun var located_in hole ->
+                          let bp = Bound_pattern.singleton (Bound_var.create var Name_mode.normal) in
+                          let named = match (located_in : Field.t) with
+                            | Block (i, _kind) ->
+                                Named.create_prim (Flambda_primitive.Unary (Block_load { field = Targetint_31_63.of_int i; kind = Flambda_primitive.Block_access_kind.Values { tag = Unknown; size = Unknown; field_kind = Flambda_primitive.Block_access_field_kind.Any_value}; mut = Immutable }, oarg)) dbg 
+                            | Value_slot _ -> failwith "todo"
+                            | Function_slot _ -> failwith "todo"
+                            | Is_int | Get_tag | Code_of_closure | Apply _ -> failwith "todo"
+                          in
+                          RE.create_let bp named ~body:hole
+                        ) to_bind arg hole
+       
+                end
               | Simple arg ->
                 let fields =
                   Code_id_or_name.Map.find
@@ -660,6 +691,52 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                 Format.printf "BOUM ? %a@." Named.print named;
                 assert false)
             | _ -> assert false)
+          | Bound_pattern.Singleton bv
+            when Code_id_or_name.Map.mem
+                   (Code_id_or_name.var (Bound_var.var bv))
+                   env.uses.changed_representation -> (
+            match let_.defining_expr with
+            | Named (Prim (Variadic (Make_block (_kind, _, _), args), dbg)) ->
+                let fields =
+                  Code_id_or_name.Map.find
+                    (Code_id_or_name.var (Bound_var.var bv))
+                    env.uses.changed_representation
+                in
+                let fields = match fields with
+                  | Not_unboxed _ -> Misc.fatal_errorf "Not_unboxed in changed_representation!"
+                  | Unboxed fields -> fields
+                in
+                let mp = Field.Map.fold (fun f uf mp ->
+                    match (f : Field.t) with
+                    | Block (i, _kind) ->
+                        let arg = List.nth args i in
+                        if simple_in_unboxable env arg then
+                          fold2_unboxed_subset (fun ff var mp ->
+                            Field.Map.add ff (Simple.var var) mp
+                          ) uf (get_simple_unboxable env arg) mp
+                        else
+                          (match uf with Dep_solver.Not_unboxed ff -> Field.Map.add ff (rewrite_simple kinds env arg) mp | Dep_solver.Unboxed _ -> Misc.fatal_errorf "trying to unbox simple")
+
+                    | Get_tag -> failwith "todo"
+                    | Is_int -> failwith "todo"
+                    | Value_slot _ | Function_slot _ | Code_of_closure | Apply _ -> assert false
+                  )
+                  fields Field.Map.empty
+                in
+                let mx = ref 0 in
+                Field.Map.iter (fun field _ ->
+                    match field with
+                    | Block (i, kind) -> assert (Flambda_kind.equal kind Flambda_kind.value); mx := max !mx (i+1)
+                    | Get_tag | Is_int | Value_slot _ | Function_slot _ | Code_of_closure | Apply _ -> assert false
+                    ) mp;
+                let args = List.init !mx (fun i -> match Field.Map.find_opt (Field.Block (i, Flambda_kind.value)) mp with None -> Simple.const_zero | Some x -> x) in
+                let named = Named.create_prim (Flambda_primitive.Variadic (Make_block (Flambda_primitive.Block_kind.Values (Tag.Scannable.zero, List.map (fun _ -> Flambda_kind.With_subkind.any_value) args), Immutable, Alloc_mode.For_allocations.heap (* TODO *)), args)) dbg in
+                RE.create_let bp named ~body:hole
+            | _ ->
+
+            let defining_expr = rewrite_named kinds env defining_expr in
+            RE.create_let bp defining_expr ~body:hole
+                  )
           | _ ->
             let defining_expr = rewrite_named kinds env defining_expr in
             RE.create_let bp defining_expr ~body:hole
