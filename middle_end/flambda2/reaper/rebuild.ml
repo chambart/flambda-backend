@@ -695,6 +695,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
             when Code_id_or_name.Map.mem
                    (Code_id_or_name.var (Bound_var.var bv))
                    env.uses.changed_representation -> (
+              (* TODO when this block is stored anywhere else, the subkind is no longer correct... we need to fix that somehow *)
             match let_.defining_expr with
             | Named (Prim (Variadic (Make_block (_kind, _, _), args), dbg)) ->
                 let fields =
