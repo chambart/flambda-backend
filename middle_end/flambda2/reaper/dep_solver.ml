@@ -648,7 +648,7 @@ type repr =
   | Changed_representation of Field.t unboxed_fields
 *)
 
-type assigned = Variable.t unboxed_fields Code_id_or_name.Map.t
+type assigned = Variable.t unboxed_fields Field.Map.t Code_id_or_name.Map.t
 
 type result =
   { uses : use_result;
@@ -656,7 +656,7 @@ type result =
     dual_graph : Dual_graph.graph;
     unboxed_fields : assigned;
     (* CR: [(Field.t, Constant.t) Either.t unboxed_fields Code_id_or_name.Map.t] ? *)
-    changed_representation : Field.t unboxed_fields Code_id_or_name.Map.t;
+    changed_representation : Field.t unboxed_fields Field.Map.t Code_id_or_name.Map.t;
   }
 
 let pp_result ppf (res : use_result) =
@@ -876,9 +876,9 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
               match elt with
               | Top ->
                   Misc.fatal_errorf "Trying to unbox Top uses when unboxing %a" Code_id_or_name.print to_patch
-              | Bottom -> Unboxed Field.Map.empty
+              | Bottom -> Field.Map.empty
               | Fields { fields; _ } ->
-                Unboxed (Field.Map.mapi
+                (Field.Map.mapi
                   (fun field field_elt ->
                      let new_name = Flambda_colours.without_colours ~f:(fun () -> Format.asprintf "%s_field_%a" name_prefix Field.print field) in
                     let[@local] default () =
@@ -899,7 +899,7 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
                             | Some elt -> Graph.join_elt acc elt
                           ) flow_to Bottom
                         in
-                        unbox_elt elt new_name
+                        Unboxed (unbox_elt elt new_name)
                       else if Code_id_or_name.Set.exists has_to_be_unboxed flow_to then
                         Misc.fatal_errorf "Field %a of %s flows to both unboxed and non-unboxed variables"
                           Field.print field name_prefix
@@ -912,14 +912,14 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
             in
             let fields =
               match Hashtbl.find_opt result to_patch with
-              | None -> Unboxed Field.Map.empty
+              | None -> Field.Map.empty
               | Some elt -> unbox_elt elt new_name
             in
             assigned := Code_id_or_name.Map.add to_patch fields !assigned)
           to_patch)
     to_unbox;
   Format.printf "new vars: %a"
-    (Code_id_or_name.Map.print (pp_unboxed_elt Variable.print))
+    (Code_id_or_name.Map.print (Field.Map.print (pp_unboxed_elt Variable.print)))
     !assigned;
   let changed_representation = ref Code_id_or_name.Map.empty in
   Code_id_or_name.Set.iter (fun code_id_or_name ->
@@ -930,10 +930,10 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
       in
     let repr = let rec repr_elt = function
     | Top -> Misc.fatal_errorf "Cannot change representation of Top for %a" Code_id_or_name.print code_id_or_name
-    | Bottom -> Unboxed Field.Map.empty
+    | Bottom -> Field.Map.empty
     | Fields {fields; _} ->
       (* TODO handle closures & non-value fields *)
-      Unboxed (Field.Map.mapi (fun field field_elt ->
+      (Field.Map.mapi (fun field field_elt ->
             match field_elt with
             | Field_top -> Not_unboxed (mk_field ())
             | Field_vals flow_to ->
@@ -948,7 +948,7 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
                             | Some elt -> Graph.join_elt acc elt
                           ) flow_to Bottom
                         in
-                        repr_elt elt
+                        Unboxed (repr_elt elt)
                       else if Code_id_or_name.Set.exists has_to_be_unboxed flow_to then
                         Misc.fatal_errorf "Field %a of %a flows to both unboxed and non-unboxed variables"
                           Field.print field Code_id_or_name.print code_id_or_name
@@ -960,5 +960,5 @@ in repr_elt uses in
     changed_representation := Code_id_or_name.Map.add c repr !changed_representation)
       (Code_id_or_name.Map.find code_id_or_name dominated_by_allocation_points)
     ) to_change_representation;
-  Format.eprintf "@.TO_CHG: %a@." (Code_id_or_name.Map.print (pp_unboxed_elt Field.print)) !changed_representation;
+  Format.eprintf "@.TO_CHG: %a@." (Code_id_or_name.Map.print (Field.Map.print (pp_unboxed_elt Field.print))) !changed_representation;
   { uses = result; aliases; dual_graph; unboxed_fields = !assigned; changed_representation = !changed_representation }

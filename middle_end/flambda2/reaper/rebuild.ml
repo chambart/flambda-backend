@@ -264,10 +264,6 @@ let rec fold2_unboxed_subset (f : 'a -> 'b -> 'c -> 'c) (fields1 : 'a Dep_solver
 let rewrite_named kinds env (named : Named.t) =
   let[@local] rewrite_field_access arg field =
     let arg = get_simple_unboxable env arg in
-    let arg = match arg with
-      | Dep_solver.Not_unboxed _ -> assert false
-      | Dep_solver.Unboxed fields -> fields
-    in
     let var =
       Field.Map.find field arg
     in
@@ -558,10 +554,6 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                     (Code_id_or_name.var (Bound_var.var bv))
                     env.uses.unboxed_fields
                 in
-                let fields = match fields with
-                  | Not_unboxed _ -> Misc.fatal_errorf "Not_unboxed in unboxed_fields!"
-                  | Unboxed fields -> fields
-                in
                 Field.Map.fold
                   (fun (field : Global_flow_graph.Field.t) var hole ->
                     let arg =
@@ -585,7 +577,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                         (Bound_var.create var Name_mode.normal)
                     in
                     RE.create_let bp (Named.create_simple simple) ~body:hole
-                    | Either.Right arg_fields -> bind_fields var arg_fields hole)
+                    | Either.Right arg_fields -> bind_fields var (Dep_solver.Unboxed arg_fields) hole)
                   fields hole
               | Prim
                   ( Unary (Opaque_identity { middle_end_only = true; _ }, arg),
@@ -606,22 +598,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                   Code_id_or_name.Map.find (Code_id_or_name.name arg)
                     env.uses.unboxed_fields
                 in
-                let rec bind_fields fields arg_fields hole =
-                  match fields, arg_fields with
-                  | Dep_solver.Not_unboxed var, Dep_solver.Not_unboxed arg ->
-                      let bp = Bound_pattern.singleton (Bound_var.create var Name_mode.normal) in
-                      RE.create_let bp (Named.create_simple (Simple.var arg)) ~body:hole
-                  | Dep_solver.Not_unboxed _, Dep_solver.Unboxed _ ->
-                      Misc.fatal_errorf "Cannot create a let-binding from a non-unboxed value to an unboxed value"
-                  | Dep_solver.Unboxed _, Dep_solver.Not_unboxed _ ->
-                      Misc.fatal_errorf "Cannot create a let-binding from an unboxed value to a non-unboxed value"
-                  | Dep_solver.Unboxed fields, Dep_solver.Unboxed arg_fields ->
-                      Field.Map.fold (fun field f hole ->
-                          let arg = Field.Map.find field arg_fields in
-                          bind_fields f arg hole
-                        ) fields hole
-                in
-                bind_fields fields arg_fields hole
+                bind_fields (Dep_solver.Unboxed fields) (Dep_solver.Unboxed arg_fields) hole
               | Prim (Unary (Block_load { field; kind; _ }, arg), dbg) ->
                 let field =
                   Field.Block (Targetint_31_63.to_int field, Flambda_primitive.Block_access_kind.element_kind_for_load kind) in
@@ -631,16 +608,12 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                 begin
                   match Code_id_or_name.Map.find_opt arg env.uses.unboxed_fields with
                   | Some arg ->
-                let arg = match arg with
-                  | Dep_solver.Not_unboxed _ -> assert false
-                  | Dep_solver.Unboxed fields -> fields
-                in
                 let fields = Code_id_or_name.Map.find (Code_id_or_name.var (Bound_var.var bv)) env.uses.unboxed_fields in
-                bind_fields fields (Field.Map.find field arg) hole
+                bind_fields (Dep_solver.Unboxed fields) (Field.Map.find field arg) hole
                   | None ->
                       assert (Code_id_or_name.Map.mem arg env.uses.changed_representation);
                       let arg = Code_id_or_name.Map.find arg env.uses.changed_representation in
-                      let arg = Field.Map.find field (match arg with Dep_solver.Not_unboxed _ -> assert false | Dep_solver.Unboxed fields -> fields) in
+                      let arg = Field.Map.find field arg in 
                       let to_bind = Code_id_or_name.Map.find (Code_id_or_name.var (Bound_var.var bv)) env.uses.unboxed_fields in
                       fold2_unboxed_subset (fun var located_in hole ->
                           let bp = Bound_pattern.singleton (Bound_var.create var Name_mode.normal) in
@@ -652,7 +625,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                             | Is_int | Get_tag | Code_of_closure | Apply _ -> failwith "todo"
                           in
                           RE.create_let bp named ~body:hole
-                        ) to_bind arg hole
+                        ) (Dep_solver.Unboxed to_bind) arg hole
        
                 end
               | Simple arg ->
@@ -671,22 +644,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                   Code_id_or_name.Map.find (Code_id_or_name.name arg)
                     env.uses.unboxed_fields
                 in
-                let rec bind_fields fields arg_fields hole =
-                  match fields, arg_fields with
-                  | Dep_solver.Not_unboxed var, Dep_solver.Not_unboxed arg ->
-                      let bp = Bound_pattern.singleton (Bound_var.create var Name_mode.normal) in
-                      RE.create_let bp (Named.create_simple (Simple.var arg)) ~body:hole
-                  | Dep_solver.Not_unboxed _, Dep_solver.Unboxed _ ->
-                      Misc.fatal_errorf "Cannot create a let-binding from a non-unboxed value to an unboxed value"
-                  | Dep_solver.Unboxed _, Dep_solver.Not_unboxed _ ->
-                      Misc.fatal_errorf "Cannot create a let-binding from an unboxed value to a non-unboxed value"
-                  | Dep_solver.Unboxed fields, Dep_solver.Unboxed arg_fields ->
-                      Field.Map.fold (fun field f hole ->
-                          let arg = Field.Map.find field arg_fields in
-                          bind_fields f arg hole
-                        ) fields hole
-                in
-                bind_fields fields arg_fields hole
+                bind_fields (Dep_solver.Unboxed fields) (Dep_solver.Unboxed arg_fields) hole
               | named ->
                 Format.printf "BOUM ? %a@." Named.print named;
                 assert false)
@@ -703,10 +661,6 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                     (Code_id_or_name.var (Bound_var.var bv))
                     env.uses.changed_representation
                 in
-                let fields = match fields with
-                  | Not_unboxed _ -> Misc.fatal_errorf "Not_unboxed in changed_representation!"
-                  | Unboxed fields -> fields
-                in
                 let mp = Field.Map.fold (fun f uf mp ->
                     match (f : Field.t) with
                     | Block (i, _kind) ->
@@ -714,7 +668,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                         if simple_in_unboxable env arg then
                           fold2_unboxed_subset (fun ff var mp ->
                             Field.Map.add ff (Simple.var var) mp
-                          ) uf (get_simple_unboxable env arg) mp
+                          ) uf (Dep_solver.Unboxed (get_simple_unboxable env arg)) mp
                         else
                           (match uf with Dep_solver.Not_unboxed ff -> Field.Map.add ff (rewrite_simple kinds env arg) mp | Dep_solver.Unboxed _ -> Misc.fatal_errorf "trying to unbox simple")
 
