@@ -48,14 +48,17 @@ type 'a unboxed_fields =
   | Not_unboxed of 'a
   | Unboxed of 'a unboxed_fields Global_flow_graph.Field.Map.t
 
-type assigned = Variable.t unboxed_fields Global_flow_graph.Field.Map.t Code_id_or_name.Map.t
+type assigned =
+  Variable.t unboxed_fields Global_flow_graph.Field.Map.t Code_id_or_name.Map.t
 
 type result =
   { uses : use_result;
     aliases : alias_result;
     dual_graph : Global_flow_graph.Dual.graph;
     unboxed_fields : assigned;
-    changed_representation : Global_flow_graph.Field.t unboxed_fields Global_flow_graph.Field.Map.t Code_id_or_name.Map.t;
+    changed_representation :
+      Global_flow_graph.Field.t unboxed_fields Global_flow_graph.Field.Map.t
+      Code_id_or_name.Map.t
   }
 
 val pp_elt : Format.formatter -> elt -> unit
