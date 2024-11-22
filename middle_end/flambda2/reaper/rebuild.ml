@@ -555,16 +555,15 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
             when Code_id_or_name.Map.mem
                    (Code_id_or_name.var (Bound_var.var bv))
                    env.uses.unboxed_fields -> (
-            Format.printf "TO unbox ici %a@." Bound_pattern.print bp;
+            let to_bind =
+              Code_id_or_name.Map.find
+                (Code_id_or_name.var (Bound_var.var bv))
+                env.uses.unboxed_fields
+            in
             match let_.defining_expr with
             | Named named -> (
               match named with
               | Prim (Variadic (Make_block (_kind, _, _), args), _dbg) ->
-                let fields =
-                  Code_id_or_name.Map.find
-                    (Code_id_or_name.var (Bound_var.var bv))
-                    env.uses.unboxed_fields
-                in
                 Field.Map.fold
                   (fun (field : Global_flow_graph.Field.t) var hole ->
                     let arg =
@@ -597,28 +596,14 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                       RE.create_let bp (Named.create_simple simple) ~body:hole
                     | Either.Right arg_fields ->
                       bind_fields var (Dep_solver.Unboxed arg_fields) hole)
-                  fields hole
+                  to_bind hole
               | Prim
                   ( Unary (Opaque_identity { middle_end_only = true; _ }, arg),
                     _dbg ) ->
                 (* XXX TO REMOVE *)
-                let fields =
-                  Code_id_or_name.Map.find
-                    (Code_id_or_name.var (Bound_var.var bv))
-                    env.uses.unboxed_fields
-                in
-                let arg_fields =
-                  let arg =
-                    Simple.pattern_match
-                      ~name:(fun x ~coercion:_ -> x)
-                      ~const:(fun _ -> assert false)
-                      arg
-                  in
-                  Code_id_or_name.Map.find (Code_id_or_name.name arg)
-                    env.uses.unboxed_fields
-                in
-                bind_fields (Dep_solver.Unboxed fields)
-                  (Dep_solver.Unboxed arg_fields) hole
+                bind_fields (Dep_solver.Unboxed to_bind)
+                  (Dep_solver.Unboxed (get_simple_unboxable env arg))
+                  hole
               | Prim (Unary (Block_load { field; kind; _ }, arg), dbg) -> (
                 let field =
                   Field.Block
@@ -638,12 +623,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                   Code_id_or_name.Map.find_opt arg env.uses.unboxed_fields
                 with
                 | Some arg ->
-                  let fields =
-                    Code_id_or_name.Map.find
-                      (Code_id_or_name.var (Bound_var.var bv))
-                      env.uses.unboxed_fields
-                  in
-                  bind_fields (Dep_solver.Unboxed fields)
+                  bind_fields (Dep_solver.Unboxed to_bind)
                     (Field.Map.find field arg) hole
                 | None ->
                   assert (
@@ -652,11 +632,6 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                     Code_id_or_name.Map.find arg env.uses.changed_representation
                   in
                   let arg = Field.Map.find field arg in
-                  let to_bind =
-                    Code_id_or_name.Map.find
-                      (Code_id_or_name.var (Bound_var.var bv))
-                      env.uses.unboxed_fields
-                  in
                   fold2_unboxed_subset
                     (fun var located_in hole ->
                       let bp =
@@ -692,23 +667,9 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                       RE.create_let bp named ~body:hole)
                     (Dep_solver.Unboxed to_bind) arg hole)
               | Simple arg ->
-                let fields =
-                  Code_id_or_name.Map.find
-                    (Code_id_or_name.var (Bound_var.var bv))
-                    env.uses.unboxed_fields
-                in
-                let arg_fields =
-                  let arg =
-                    Simple.pattern_match
-                      ~name:(fun x ~coercion:_ -> x)
-                      ~const:(fun _ -> assert false)
-                      arg
-                  in
-                  Code_id_or_name.Map.find (Code_id_or_name.name arg)
-                    env.uses.unboxed_fields
-                in
-                bind_fields (Dep_solver.Unboxed fields)
-                  (Dep_solver.Unboxed arg_fields) hole
+                bind_fields (Dep_solver.Unboxed to_bind)
+                  (Dep_solver.Unboxed (get_simple_unboxable env arg))
+                  hole
               | named ->
                 Format.printf "BOUM ? %a@." Named.print named;
                 assert false)
@@ -720,7 +681,10 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
             (* TODO when this block is stored anywhere else, the subkind is no
                longer correct... we need to fix that somehow *)
             match let_.defining_expr with
-            | Named (Prim (Variadic (Make_block (_kind, _, _), args), dbg)) ->
+            | Named
+                (Prim
+                  (Variadic (Make_block (_kind, _mut, alloc_mode), args), dbg))
+              ->
               let fields =
                 Code_id_or_name.Map.find
                   (Code_id_or_name.var (Bound_var.var bv))
@@ -784,7 +748,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                                  (fun _ -> Flambda_kind.With_subkind.any_value)
                                  args ),
                            Immutable,
-                           Alloc_mode.For_allocations.heap (* TODO *) ),
+                           alloc_mode ),
                        args ))
                   dbg
               in
