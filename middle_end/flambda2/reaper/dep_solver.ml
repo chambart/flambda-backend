@@ -799,7 +799,7 @@ let can_unbox dual dual_graph graph ~dominated_by_allocation_points
               match relation with
               | Field.Block _ -> false
               | Field.Value_slot _ -> false
-              | Field.Function_slot _ -> true
+              | Field.Function_slot _ -> true (* TODO back to false *)
               | Field.Code_of_closure -> true
               | Field.Is_int -> true
               | Field.Get_tag -> true
