@@ -255,6 +255,19 @@ let get_simple_unboxable env simple =
         env.uses.unboxed_fields)
     simple
 
+let field_kind : Field.t -> _ = function
+  | Block (_, kind) -> kind
+  | Value_slot vs -> Flambda_kind.With_subkind.kind (Value_slot.kind vs)
+  | Function_slot _ | Is_int | Get_tag -> Flambda_kind.value
+  | (Code_of_closure | Apply _) as field -> Misc.fatal_errorf "[field_kind] for %a" Field.print field
+
+let rec fold_unboxed_with_kind (f : Flambda_kind.t -> 'a -> 'b -> 'b) (fields : 'a Dep_solver.unboxed_fields Field.Map.t) acc =
+  Field.Map.fold (fun field elt acc ->
+      match (elt : _ Dep_solver.unboxed_fields) with
+      | Not_unboxed elt -> f (field_kind field) elt acc
+      | Unboxed fields -> fold_unboxed_with_kind f fields acc
+    ) fields acc
+
 (* This is not symmetrical!! [fields1] must define a subset of [fields2], but
    does not have to define all of them. *)
 let rec fold2_unboxed_subset (f : 'a -> 'b -> 'c -> 'c)
@@ -320,7 +333,16 @@ let rewrite_apply_cont_expr kinds env ac =
       Format.eprintf "Missing cont: %a@." Continuation.print cont;
       args
   in
-  let args = List.map (rewrite_simple kinds env) args in
+  let args = List.concat_map (fun simple ->
+    if simple_in_unboxable env simple then
+      let fields = get_simple_unboxable env simple in
+            fold_unboxed_with_kind (fun _kind v acc ->
+                Simple.var v :: acc)
+              fields []
+    else
+      [rewrite_simple kinds env simple]
+    ) args
+  in
   Apply_cont_expr.with_continuation_and_args ac cont ~args
 
 let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
@@ -777,10 +799,18 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
     in
     let cont_handler =
       let handler = rebuild_expr kinds env expr in
+      let l = select_list_elements parameters_to_keep (Bound_parameters.to_list bound_parameters) in
+      let l = List.concat_map (fun param -> 
+        let v = Bound_parameter.var param in
+        match Code_id_or_name.Map.find_opt (Code_id_or_name.var v) env.uses.unboxed_fields with
+        | None -> [param]
+        | Some fields ->
+            fold_unboxed_with_kind (fun kind v acc ->
+                Bound_parameter.create v (Flambda_kind.With_subkind.anything kind) :: acc)
+              fields []
+        ) l in
       RE.create_continuation_handler
-        (Bound_parameters.create
-           (select_list_elements parameters_to_keep
-              (Bound_parameters.to_list bound_parameters)))
+        (Bound_parameters.create l)
         ~handler ~is_exn_handler ~is_cold
     in
     let let_cont_expr =
