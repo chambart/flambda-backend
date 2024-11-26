@@ -239,7 +239,7 @@ let rewrite_set_of_closures bound (env : env) value_slots alloc_mode
   in
   Set_of_closures.create ~value_slots alloc_mode function_decls
 
-let simple_in_unboxable env simple =
+let simple_is_unboxable env simple =
   Simple.pattern_match
     ~const:(fun _ -> false)
     ~name:(fun name ~coercion:_ ->
@@ -301,14 +301,14 @@ let rewrite_named kinds env (named : Named.t) =
   match[@ocaml.warning "-4"] named with
   | Simple simple -> Named.create_simple (rewrite_simple kinds env simple)
   | Prim (Unary (Block_load { kind; field; _ }, arg), _dbg)
-    when simple_in_unboxable env arg ->
+    when simple_is_unboxable env arg ->
     let kind = Flambda_primitive.Block_access_kind.element_kind_for_load kind in
     let field =
       Global_flow_graph.Field.Block (Targetint_31_63.to_int field, kind)
     in
     rewrite_field_access arg field
   | Prim (Unary (Project_value_slot { value_slot; _ }, arg), _dbg)
-    when simple_in_unboxable env arg ->
+    when simple_is_unboxable env arg ->
     rewrite_field_access arg (Global_flow_graph.Field.Value_slot value_slot)
   | Prim (prim, dbg) ->
     let prim = Flambda_primitive.map_args (rewrite_simple kinds env) prim in
@@ -336,7 +336,7 @@ let rewrite_apply_cont_expr kinds env ac =
       args
   in
   let args = List.concat_map (fun simple ->
-    if simple_in_unboxable env simple then
+    if simple_is_unboxable env simple then
       let fields = get_simple_unboxable env simple in
             fold_unboxed_with_kind (fun _kind v acc ->
                 Simple.var v :: acc)
@@ -426,7 +426,7 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
           (* TODO unbox other args fields *)
 
           (* List.concat_map (fun simple -> *)
-          (*     if simple_in_unboxable env simple then *)
+          (*     if simple_is_unboxable env simple then *)
           (*       let fields = get_simple_unboxable env simple in *)
           (*       fold_unboxed_with_kind (fun _kind v acc -> *)
           (*         Simple.var v :: acc) *)
@@ -435,7 +435,7 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
           (*       [rewrite_simple kinds env simple] *)
           (*   ) (Apply.args apply) *)
           match Apply.callee apply with
-          | Some callee when simple_in_unboxable env callee ->
+          | Some callee when simple_is_unboxable env callee ->
               let fields = get_simple_unboxable env callee in
               let new_args =
                 fold_unboxed_with_kind (fun kind v acc ->
@@ -634,7 +634,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                       match field with
                       | Block (nth, _kind) ->
                         let arg = List.nth args nth in
-                        if simple_in_unboxable env arg
+                        if simple_is_unboxable env arg
                         then Either.Right (get_simple_unboxable env arg)
                         else Either.Left arg
                       | Is_int -> Either.Left Simple.untagged_const_false
@@ -760,7 +760,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                     match (f : Field.t) with
                     | Block (i, _kind) -> (
                       let arg = List.nth args i in
-                      if simple_in_unboxable env arg
+                      if simple_is_unboxable env arg
                       then
                         fold2_unboxed_subset
                           (fun ff var mp ->
