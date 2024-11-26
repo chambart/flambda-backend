@@ -837,6 +837,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                   (Dep_solver.Unboxed (get_simple_unboxable env arg))
                   hole
               | named ->
+                (* TODO project_value_slot *)
                 Format.printf "BOUM ? %a@." Named.print named;
                 assert false)
             | _ -> assert false)
