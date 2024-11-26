@@ -985,17 +985,6 @@ let rebuild
   all_slot_offsets := Slot_offsets.empty;
   all_code := Code_id.Map.empty;
 
-  let function_to_unbox code_id (code_dep : Traverse_acc.code_dep) =
-    match Code_id_or_name.Map.find_opt
-            (Code_id_or_name.var code_dep.my_closure)
-            solved_dep.unboxed_fields
-    with
-    | None -> ()
-    | Some _ ->
-        Format.eprintf "@.@.XXXX CLOSURE Unbox %a@.@." Code_id.print code_id
-  in
-  Code_id.Map.iter function_to_unbox code_deps;
-
   let should_keep_function_param (code_dep : Traverse_acc.code_dep) =
     match Code_id_or_name.Map.find_opt
       (Code_id_or_name.var code_dep.my_closure)
