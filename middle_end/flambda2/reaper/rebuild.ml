@@ -494,13 +494,26 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
         Exn_continuation.create ~exn_handler ~extra_args
       in
       (* TODO rewrite return arity *)
-      let args, args_arity, return_arity, callee =
+
         match updating_calling_convention with
         | Not_changing_calling_convention ->
-            ( List.map (rewrite_simple kinds env) (Apply.args apply),
-              Apply.args_arity apply,
-              Apply.return_arity apply,
-              rewrite_simple_opt env (Apply.callee apply) )
+            let args = List.map (rewrite_simple kinds env) (Apply.args apply) in
+            let args_arity = Apply.args_arity apply in
+            let return_arity = Apply.return_arity apply in
+            let apply =
+              Apply.create
+                (* Note here that callee is rewritten with [rewrite_simple_opt], which
+                   will put [None] as the callee instead of a dummy value, as a dummy
+                   value would then be further used in a later simplify pass to refine
+                   the call kind and produce an invalid. *)
+                ~callee:(rewrite_simple_opt env (Apply.callee apply)) ~continuation:(Apply.continuation apply) exn_continuation
+                ~args ~args_arity ~return_arity ~call_kind
+                (Apply.dbg apply) ~inlined:(Apply.inlined apply)
+                ~inlining_state:(Apply.inlining_state apply)
+                ~probe:(Apply.probe apply) ~position:(Apply.position apply)
+                ~relative_history:(Apply.relative_history apply)
+            in
+            Expr.create_apply apply, Apply.free_names apply
         | Changing_calling_convention code_id ->
         (* TODO unbox other args fields *)
 
@@ -522,7 +535,13 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
               fields [] in
           new_args, None
         | (None | Some _) as callee ->
-            [], callee
+            [],
+                (* Note here that callee is rewritten with [rewrite_simple_opt], which
+                   will put [None] as the callee instead of a dummy value, as a dummy
+                   value would then be further used in a later simplify pass to refine
+                   the call kind and produce an invalid. *)
+
+            rewrite_simple_opt env callee
         in
         let params_decisions =
           match Code_id.Map.find_opt code_id env.function_params_to_keep with
@@ -531,7 +550,7 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
         in
         let args = get_args_with_kinds kinds env params_decisions (Apply.args apply) in
         let args = args @ args_for_callee in
-        let arity =
+        let args_arity =
             let components =
               List.map
                 (fun (_, k) -> Flambda_arity.Component_for_creation.Singleton k)
@@ -544,22 +563,19 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
             Flambda_arity.unarize_t (get_arity (Code_id.Map.find code_id env.function_return_decision))
           in
 
-        (List.map fst args), arity, return_arity, callee
-      in
-      let apply =
-        Apply.create
-        (* Note here that callee is rewritten with [rewrite_simple_opt], which
-           will put [None] as the callee instead of a dummy value, as a dummy
-           value would then be further used in a later simplify pass to refine
-           the call kind and produce an invalid. *)
-          ~callee ~continuation:(Apply.continuation apply) exn_continuation
-          ~args ~args_arity ~return_arity ~call_kind
-          (Apply.dbg apply) ~inlined:(Apply.inlined apply)
-          ~inlining_state:(Apply.inlining_state apply)
-          ~probe:(Apply.probe apply) ~position:(Apply.position apply)
-          ~relative_history:(Apply.relative_history apply)
-      in
-      Expr.create_apply apply, Apply.free_names apply
+          let args = (List.map fst args) in
+          let apply =
+              Apply.create
+                ~callee ~continuation:(Apply.continuation apply) exn_continuation
+                ~args ~args_arity ~return_arity ~call_kind
+                (Apply.dbg apply) ~inlined:(Apply.inlined apply)
+                ~inlining_state:(Apply.inlining_state apply)
+                ~probe:(Apply.probe apply) ~position:(Apply.position apply)
+                ~relative_history:(Apply.relative_history apply)
+            in
+            Expr.create_apply apply, Apply.free_names apply
+
+
   in
   rebuild_holed kinds env holed_expr (RE.from_expr ~expr ~free_names)
 
