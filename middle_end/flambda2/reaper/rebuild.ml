@@ -26,11 +26,18 @@ let all_slot_offsets = ref Slot_offsets.empty
 
 let all_code = ref Code_id.Map.empty
 
+type param_decision =
+  | Do_nothing
+  | Delete
+  | Unbox of Variable.t Dep_solver.unboxed_fields Field.Map.t
+
 type env =
   { uses : Dep_solver.result;
     get_code_metadata : Code_id.t -> Code_metadata.t;
-    cont_params_to_keep : bool list Continuation.Map.t;
-    should_keep_param : Continuation.t -> Variable.t -> bool;
+    (* TODO change names *)
+    cont_params_to_keep : param_decision list Continuation.Map.t;
+    should_keep_param : Continuation.t -> Variable.t -> param_decision;
+    (* TODO same here *)
     function_params_to_keep : bool list Code_id.Map.t;
     should_keep_function_param : Code_id.t -> Variable.t -> bool
   }
@@ -289,6 +296,54 @@ let rec fold2_unboxed_subset (f : 'a -> 'b -> 'c -> 'c)
         fold2_unboxed_subset f f1 f2 acc)
       fields1 acc
 
+let rec fold2_unboxed_subset_with_kind (f : Flambda_kind.t -> 'a -> 'b -> 'c -> 'c)
+    (fields1 : 'a Dep_solver.unboxed_fields Field.Map.t)
+    (fields2 : 'b Dep_solver.unboxed_fields Field.Map.t) acc =
+  Field.Map.fold (fun field f1 acc ->
+      let f2 = Field.Map.find field fields2 in
+  match (f1, f2 : _ Dep_solver.unboxed_fields * _ Dep_solver.unboxed_fields) with
+  | Not_unboxed x1, Not_unboxed x2 -> f (field_kind field) x1 x2 acc
+  | Not_unboxed _, Unboxed _ | Unboxed _, Not_unboxed _ ->
+    Misc.fatal_errorf "[fold2_unboxed_subset]"
+  | Unboxed fields1, Unboxed fields2 ->
+      fold2_unboxed_subset_with_kind f fields1 fields2 acc)
+    fields1 acc
+
+let get_parameters params_decisions params =
+  List.fold_left2 (fun acc param param_decision ->
+      match param_decision with
+      | Delete -> acc
+      | Do_nothing -> param :: acc
+      | Unbox fields ->
+          fold_unboxed_with_kind (fun kind v acc ->
+              Bound_parameter.create v (Flambda_kind.With_subkind.anything kind) :: acc)
+            fields acc
+    ) [] params params_decisions |> List.rev
+
+let get_args kinds env params_decisions args =
+  List.fold_left2 (fun acc arg param_decision ->
+    match param_decision with
+      | Delete -> acc
+      | Do_nothing -> rewrite_simple kinds env arg :: acc
+      | Unbox fields ->
+        let arg_fields = get_simple_unboxable env arg in
+        fold2_unboxed_subset_with_kind (fun _kind _param arg_field acc ->
+            Simple.var arg_field :: acc)
+          fields arg_fields acc
+    ) [] args params_decisions |> List.rev
+
+let get_args_with_kinds kinds env params_decisions args =
+  List.fold_left2 (fun acc (arg, kind) param_decision ->
+    match param_decision with
+      | Delete -> acc
+      | Do_nothing -> (rewrite_simple kinds env arg, kind) :: acc
+      | Unbox fields ->
+        let arg_fields = get_simple_unboxable env arg in
+        fold2_unboxed_subset_with_kind (fun kind _param arg_field acc ->
+            (Simple.var arg_field, Flambda_kind.With_subkind.anything kind) :: acc)
+          fields arg_fields acc
+    ) [] args params_decisions |> List.rev
+
 let rewrite_named kinds env (named : Named.t) =
   let[@local] rewrite_field_access arg field =
     let arg = get_simple_unboxable env arg in
@@ -321,34 +376,14 @@ let rewrite_named kinds env (named : Named.t) =
     Named.create_static_consts (rewrite_static_const_group kinds env sc)
   | Rec_info r -> Named.create_rec_info r
 
-let select_list_elements to_select l =
-  List.filter_map
-    (fun (x, to_select) -> if to_select then Some x else None)
-    (List.combine l to_select)
 
 let rewrite_apply_cont_expr kinds env ac =
   let cont = Apply_cont_expr.continuation ac in
   let args = Apply_cont_expr.args ac in
   let args =
-    try
       (* only for testing, TODO remove this try/with *)
       let args_to_keep = Continuation.Map.find cont env.cont_params_to_keep in
-      select_list_elements args_to_keep args
-    with Not_found ->
-      Format.eprintf "Missing cont: %a@." Continuation.print cont;
-      args
-  in
-  let args =
-    List.concat_map
-      (fun simple ->
-        if simple_is_unboxable env simple
-        then
-          let fields = get_simple_unboxable env simple in
-          fold_unboxed_with_kind
-            (fun _kind v acc -> Simple.var v :: acc)
-            fields []
-        else [rewrite_simple kinds env simple])
-      args
+      get_args kinds env args_to_keep args
   in
   Apply_cont_expr.with_continuation_and_args ac cont ~args
 
@@ -409,24 +444,25 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
         let extra_args =
           let selected_extra_args =
             let extra_args = Exn_continuation.extra_args exn_continuation in
-            try
+            (* try *)
               let args_to_keep =
                 Continuation.Map.find exn_handler env.cont_params_to_keep
                 |> List.tl
                 (* This contains the exn argument that is not part of the extra
                    args *)
               in
-              select_list_elements args_to_keep extra_args
-            with Not_found ->
+              get_args_with_kinds kinds env args_to_keep extra_args
+            (* with Not_found ->
               (* Not defined in cont_params_to_keep *)
-              extra_args
+              extra_args *)
           in
-          List.map
-            (fun (simple, kind) -> rewrite_simple kinds env simple, kind)
+          (* List.map
+            (fun (simple, kind) -> rewrite_simple kinds env simple, kind) *)
             selected_extra_args
         in
         Exn_continuation.create ~exn_handler ~extra_args
       in
+      (* TODO rewrite return arity *)
       let args, args_arity, callee =
         (* TODO unbox other args fields *)
 
@@ -726,57 +762,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                 (Code_id_or_name.var (Bound_var.var bv))
                 env.uses.unboxed_fields
             in
-            match let_.defining_expr with
-            | Named named -> (
-              match named with
-              | Prim (Variadic (Make_block (_kind, _, _), args), _dbg) ->
-                Field.Map.fold
-                  (fun (field : Global_flow_graph.Field.t) var hole ->
-                    let arg =
-                      match field with
-                      | Block (nth, _kind) ->
-                        let arg = List.nth args nth in
-                        if simple_is_unboxable env arg
-                        then Either.Right (get_simple_unboxable env arg)
-                        else Either.Left arg
-                      | Is_int -> Either.Left Simple.untagged_const_false
-                      | Get_tag ->
-                        (* TODO *)
-                        assert false
-                      | Value_slot _ | Function_slot _ | Code_of_closure
-                      | Apply _ ->
-                        assert false
-                    in
-                    match arg with
-                    | Either.Left simple ->
-                      let var =
-                        match var with
-                        | Dep_solver.Not_unboxed var -> var
-                        | Dep_solver.Unboxed _ ->
-                          Misc.fatal_errorf "Trying to unbox non-unboxable"
-                      in
-                      let bp =
-                        Bound_pattern.singleton
-                          (Bound_var.create var Name_mode.normal)
-                      in
-                      RE.create_let bp (Named.create_simple simple) ~body:hole
-                    | Either.Right arg_fields ->
-                      bind_fields var (Dep_solver.Unboxed arg_fields) hole)
-                  to_bind hole
-              | Prim
-                  ( Unary (Opaque_identity { middle_end_only = true; _ }, arg),
-                    _dbg ) ->
-                (* XXX TO REMOVE *)
-                bind_fields (Dep_solver.Unboxed to_bind)
-                  (Dep_solver.Unboxed (get_simple_unboxable env arg))
-                  hole
-              | Prim (Unary (Block_load { field; kind; _ }, arg), dbg) -> (
-                let field =
-                  Field.Block
-                    ( Targetint_31_63.to_int field,
-                      Flambda_primitive.Block_access_kind.element_kind_for_load
-                        kind )
-                in
+            let load_field field arg dbg =
                 let oarg = arg in
                 let arg =
                   Simple.pattern_match arg
@@ -831,7 +817,63 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                           failwith "todo"
                       in
                       RE.create_let bp named ~body:hole)
-                    (Dep_solver.Unboxed to_bind) arg hole)
+                    (Dep_solver.Unboxed to_bind) arg hole
+      in
+            match let_.defining_expr with
+            | Named named -> (
+              match named with
+              | Prim (Variadic (Make_block (_kind, _, _), args), _dbg) ->
+                Field.Map.fold
+                  (fun (field : Global_flow_graph.Field.t) var hole ->
+                    let arg =
+                      match field with
+                      | Block (nth, _kind) ->
+                        let arg = List.nth args nth in
+                        if simple_is_unboxable env arg
+                        then Either.Right (get_simple_unboxable env arg)
+                        else Either.Left arg
+                      | Is_int -> Either.Left Simple.untagged_const_false
+                      | Get_tag ->
+                        (* TODO *)
+                        assert false
+                      | Value_slot _ | Function_slot _ | Code_of_closure
+                      | Apply _ ->
+                        assert false
+                    in
+                    match arg with
+                    | Either.Left simple ->
+                      let var =
+                        match var with
+                        | Dep_solver.Not_unboxed var -> var
+                        | Dep_solver.Unboxed _ ->
+                          Misc.fatal_errorf "Trying to unbox non-unboxable"
+                      in
+                      let bp =
+                        Bound_pattern.singleton
+                          (Bound_var.create var Name_mode.normal)
+                      in
+                      RE.create_let bp (Named.create_simple simple) ~body:hole
+                    | Either.Right arg_fields ->
+                      bind_fields var (Dep_solver.Unboxed arg_fields) hole)
+                  to_bind hole
+              | Prim
+                  ( Unary (Opaque_identity { middle_end_only = true; _ }, arg),
+                    _dbg ) ->
+                (* XXX TO REMOVE *)
+                bind_fields (Dep_solver.Unboxed to_bind)
+                  (Dep_solver.Unboxed (get_simple_unboxable env arg))
+                  hole
+              | Prim (Unary (Block_load { field; kind; _ }, arg), dbg) ->
+                let field =
+                  Field.Block
+                    ( Targetint_31_63.to_int field,
+                      Flambda_primitive.Block_access_kind.element_kind_for_load
+                        kind )
+                in
+                load_field field arg dbg
+              | Prim (Unary (Project_value_slot {value_slot; project_from = _}, arg), dbg) ->
+                let field = Field.Value_slot value_slot in
+                load_field field arg dbg
               | Simple arg ->
                 bind_fields (Dep_solver.Unboxed to_bind)
                   (Dep_solver.Unboxed (get_simple_unboxable env arg))
@@ -945,7 +987,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
     let cont_handler =
       let handler = rebuild_expr kinds env expr in
       let l =
-        select_list_elements parameters_to_keep
+        get_parameters parameters_to_keep
           (Bound_parameters.to_list bound_parameters)
       in
       let l =
@@ -977,10 +1019,9 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
   | Let_cont_rec { parent; handlers; invariant_params } ->
     (* TODO unboxed parameters *)
     let filter_params cont params =
-      Bound_parameters.create
-        (List.filter
-           (fun param -> env.should_keep_param cont (Bound_parameter.var param))
-           (Bound_parameters.to_list params))
+      let params = Bound_parameters.to_list params in
+      let params = get_parameters (List.map (fun param -> env.should_keep_param cont (Bound_parameter.var param)) params) params in
+      Bound_parameters.create params
     in
     let handlers =
       Continuation.Map.mapi
@@ -1044,13 +1085,18 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
     let keep_all_parameters =
       Continuation.Set.mem cont fixed_arity_continuations
     in
+    match Code_id_or_name.Map.find_opt (Code_id_or_name.var param) solved_dep.unboxed_fields with
+    | None ->
+        if
     keep_all_parameters
     ||
     let is_var_used = Hashtbl.mem solved_dep.uses (Code_id_or_name.var param) in
     is_var_used
     ||
     let info = Continuation.Map.find cont continuation_info in
-    info.is_exn_handler && Variable.equal param (List.hd info.params)
+    info.is_exn_handler && Variable.equal param (List.hd info.params) then
+          Do_nothing else Delete
+    | Some fields -> Unbox fields
   in
   let cont_params_to_keep =
     Continuation.Map.mapi
