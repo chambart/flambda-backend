@@ -852,6 +852,7 @@ type result =
   }
 
 let rebuild
+    ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
     ~(continuation_info : Traverse_acc.continuation_info Continuation.Map.t)
     ~fixed_arity_continuations kinds (solved_dep : Dep_solver.result)
     get_code_metadata holed =

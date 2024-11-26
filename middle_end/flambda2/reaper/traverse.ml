@@ -803,7 +803,8 @@ type result =
     deps : Global_flow_graph.graph;
     kinds : Flambda_kind.t Name.Map.t;
     fixed_arity_continuations : Continuation.Set.t;
-    continuation_info : Acc.continuation_info Continuation.Map.t
+    continuation_info : Acc.continuation_info Continuation.Map.t;
+    code_deps : Traverse_acc.code_dep Code_id.Map.t;
   }
 
 let run (unit : Flambda_unit.t) =
@@ -858,8 +859,9 @@ let run (unit : Flambda_unit.t) =
   let kinds = Acc.kinds acc in
   let fixed_arity_continuations = Acc.fixed_arity_continuations acc in
   let continuation_info = Acc.get_continuation_info acc in
+  let code_deps = Acc.code_deps acc in
   let () =
     let debug_print = Flambda_features.dump_reaper () in
-    if false && debug_print then Dot.print_dep (Acc.code_deps acc, deps)
+    if false && debug_print then Dot.print_dep (code_deps, deps)
   in
-  { holed; deps; kinds; fixed_arity_continuations; continuation_info }
+  { holed; deps; kinds; fixed_arity_continuations; continuation_info; code_deps }
