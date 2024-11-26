@@ -651,7 +651,7 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
                         | Unbox fields_apply, Unbox fields_func ->
                             fold2_unboxed_subset_with_kind (fun _kind _var_apply var_func rev_args ->
                                 Simple.var var_func :: rev_args
-                              ) fields_apply fields_func args
+                              ) fields_apply fields_func rev_args
                       ) []
                       apply_decisions
                       return_decisions
