@@ -33,13 +33,15 @@ type param_decision =
 
 type env =
   { uses : Dep_solver.result;
+    code_deps : Traverse_acc.code_dep Code_id.Map.t;
     get_code_metadata : Code_id.t -> Code_metadata.t;
     (* TODO change names *)
     cont_params_to_keep : param_decision list Continuation.Map.t;
     should_keep_param : Continuation.t -> Variable.t -> Flambda_kind.With_subkind.t -> param_decision;
     (* TODO same here *)
-    function_params_to_keep : bool list Code_id.Map.t;
-    should_keep_function_param : Code_id.t -> Variable.t -> bool
+    function_params_to_keep : param_decision list Code_id.Map.t;
+    should_keep_function_param : Code_id.t -> Variable.t -> Flambda_kind.With_subkind.t -> param_decision;
+    function_return_decision : param_decision list Code_id.Map.t;
   }
 
 let is_used (env : env) cn = Hashtbl.mem env.uses.uses cn
@@ -62,6 +64,7 @@ let poison kind = Simple.const_int_of_kind kind poison_value
 let rewrite_simple kinds (env : env) simple =
   Simple.pattern_match simple
     ~name:(fun name ~coercion:_ ->
+      assert(not (Code_id_or_name.Map.mem (Code_id_or_name.name name) env.uses.unboxed_fields));
       if is_name_used env name
       then simple
       else
@@ -333,10 +336,10 @@ let get_args kinds env params_decisions args =
     ) [] args params_decisions |> List.rev
 
 let get_args_with_kinds kinds env params_decisions args =
-  List.fold_left2 (fun acc (arg, kind) param_decision ->
+  List.fold_left2 (fun acc arg param_decision ->
     match param_decision with
       | Delete -> acc
-      | Keep _ -> (rewrite_simple kinds env arg, kind) :: acc
+      | Keep (_, kind) -> (rewrite_simple kinds env arg, kind) :: acc
       | Unbox fields ->
         let arg_fields = get_simple_unboxable env arg in
         fold2_unboxed_subset_with_kind (fun kind _param arg_field acc ->
@@ -392,11 +395,14 @@ let rewrite_apply_cont_expr kinds env ac =
   let cont = Apply_cont_expr.continuation ac in
   let args = Apply_cont_expr.args ac in
   let args =
-      (* only for testing, TODO remove this try/with *)
       let args_to_keep = Continuation.Map.find cont env.cont_params_to_keep in
       get_args kinds env args_to_keep args
   in
   Apply_cont_expr.with_continuation_and_args ac cont ~args
+
+type change_calling_convention =
+  | Not_changing_calling_convention
+  | Changing_calling_convention of Code_id.t
 
 let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
     (rev_expr : rev_expr) : RE.t =
@@ -449,11 +455,19 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
                ~f:(rewrite_simple f) ~arg:(rewrite_simple arg)
                ~last_fiber:(rewrite_simple last_fiber))
       in
-      let return_arity =
-        match Apply.continuation apply with
-        | Never_returns -> Apply.return_arity apply
-        | Return cont ->
-          Flambda_arity.unarize_t (get_arity (Continuation.Map.find cont env.cont_params_to_keep))
+      let updating_calling_convention =
+        match[@ocaml.warning "-4"] call_kind with
+        | Function { function_call = Direct code_id; _ } -> begin
+            match Code_id.Map.find_opt code_id env.code_deps with
+            | None -> Not_changing_calling_convention
+            | Some code_dep ->
+                let can_be_called_indirectly =
+                  Hashtbl.mem env.uses.uses code_dep.indirect_call_witness
+                in
+                if can_be_called_indirectly then Not_changing_calling_convention
+                else Changing_calling_convention code_id
+          end
+        | _ -> Not_changing_calling_convention
       in
       let exn_continuation = Apply.exn_continuation apply in
       let exn_continuation =
@@ -468,7 +482,7 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
                 (* This contains the exn argument that is not part of the extra
                    args *)
               in
-              get_args_with_kinds kinds env args_to_keep extra_args
+              get_args_with_kinds kinds env args_to_keep (List.map fst extra_args)
             (* with Not_found ->
               (* Not defined in cont_params_to_keep *)
               extra_args *)
@@ -480,7 +494,14 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
         Exn_continuation.create ~exn_handler ~extra_args
       in
       (* TODO rewrite return arity *)
-      let args, args_arity, callee =
+      let args, args_arity, return_arity, callee =
+        match updating_calling_convention with
+        | Not_changing_calling_convention ->
+            ( List.map (rewrite_simple kinds env) (Apply.args apply),
+              Apply.args_arity apply,
+              Apply.return_arity apply,
+              rewrite_simple_opt env (Apply.callee apply) )
+        | Changing_calling_convention code_id ->
         (* TODO unbox other args fields *)
 
         (* List.concat_map (fun simple -> *)
@@ -491,40 +512,39 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
         (*         fields [] *)
         (*     else *)
         (*       [rewrite_simple kinds env simple] *)
-        (*   ) (Apply.args apply) *)
+            (*   ) (Apply.args apply) *)
+        let args_for_callee, callee =
         match Apply.callee apply with
         | Some callee when simple_is_unboxable env callee ->
           let fields = get_simple_unboxable env callee in
-          let new_args =
-            fold_unboxed_with_kind
-              (fun kind v acc -> (kind, Simple.var v) :: acc)
-              fields []
-          in
-          let args =
-            List.map (rewrite_simple kinds env) (Apply.args apply)
-            @ List.map snd new_args
-          in
-          let arity =
-            let added_kinds =
-              List.map
-                (fun (kind, _) -> Flambda_kind.With_subkind.anything kind)
-                new_args
-            in
-            let kinds =
-              Flambda_arity.unarize (Apply.args_arity apply) @ added_kinds
-            in
+          let new_args = fold_unboxed_with_kind
+              (fun kind v acc -> (Simple.var v, Flambda_kind.With_subkind.anything kind) :: acc)
+              fields [] in
+          new_args, None
+        | (None | Some _) as callee ->
+            [], callee
+        in
+        let params_decisions =
+          match Code_id.Map.find_opt code_id env.function_params_to_keep with
+          | None -> assert false
+          | Some p -> p
+        in
+        let args = get_args_with_kinds kinds env params_decisions (Apply.args apply) in
+        let args = args @ args_for_callee in
+        let arity =
             let components =
               List.map
-                (fun k -> Flambda_arity.Component_for_creation.Singleton k)
-                kinds
+                (fun (_, k) -> Flambda_arity.Component_for_creation.Singleton k)
+                args
             in
             Flambda_arity.create [Unboxed_product components]
+        in
+
+        let return_arity =
+            Flambda_arity.unarize_t (get_arity (Code_id.Map.find code_id env.function_return_decision))
           in
-          args, arity, None
-        | None | Some _ ->
-          ( Apply.args apply,
-            Apply.args_arity apply,
-            rewrite_simple_opt env (Apply.callee apply) )
+
+        (List.map fst args), arity, return_arity, callee
       in
       let apply =
         Apply.create
@@ -1080,29 +1100,72 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
   all_slot_offsets := Slot_offsets.empty;
   all_code := Code_id.Map.empty;
   let should_keep_function_param (code_dep : Traverse_acc.code_dep) =
-    match
-      Code_id_or_name.Map.find_opt
-        (Code_id_or_name.var code_dep.my_closure)
-        solved_dep.unboxed_fields
-    with
-    | None -> fun _ -> true
-    | Some _ ->
-      fun param ->
-        let is_var_used =
-          Hashtbl.mem solved_dep.uses (Code_id_or_name.var param)
-        in
-        is_var_used
+    let can_be_called_indirectly =
+      Hashtbl.mem solved_dep.uses code_dep.indirect_call_witness
+    in
+    if can_be_called_indirectly then
+      (fun var kind ->
+         assert (not (Code_id_or_name.Map.mem (Code_id_or_name.var var) solved_dep.unboxed_fields));
+         Keep (var, kind))
+    else
+      fun param kind ->
+        match
+          Code_id_or_name.Map.find_opt
+            (Code_id_or_name.var param)
+            solved_dep.unboxed_fields
+        with
+        | None ->
+            let is_var_used =
+              Hashtbl.mem solved_dep.uses (Code_id_or_name.var param)
+            in
+            if is_var_used then
+              Keep (param, kind)
+            else
+              Delete
+        | Some fields ->
+            Unbox fields
   in
   let function_params_to_keep =
     Code_id.Map.map
       (fun (code_dep : Traverse_acc.code_dep) ->
-        List.map (should_keep_function_param code_dep) code_dep.params)
+        let kinds = Flambda_arity.unarize code_dep.arity in
+        List.map2 (should_keep_function_param code_dep) code_dep.params kinds)
       code_deps
   in
   let should_keep_function_param code_id =
     match Code_id.Map.find_opt code_id code_deps with
-    | None -> fun _ -> true
+    | None -> fun var kind -> Keep (var, kind)
     | Some code_dep -> should_keep_function_param code_dep
+  in
+  let function_return_decision =
+    Code_id.Map.mapi (fun code_id (code_dep : Traverse_acc.code_dep) ->
+        let can_be_called_indirectly =
+          Hashtbl.mem solved_dep.uses code_dep.indirect_call_witness
+        in
+        let metadata = get_code_metadata code_id in
+        let kinds = Flambda_arity.unarized_components (Code_metadata.result_arity metadata) in
+        if can_be_called_indirectly then
+          List.map2 (fun v kind ->
+              Keep (v, kind)
+            )
+            code_dep.return kinds
+        else begin
+          List.map2 (fun v kind ->
+              match Code_id_or_name.Map.find_opt (Code_id_or_name.var v) solved_dep.unboxed_fields with
+              | None ->
+                  let is_var_used =
+                    Hashtbl.mem solved_dep.uses (Code_id_or_name.var v)
+                  in
+                  if is_var_used then
+                    Keep (v, kind)
+                  else
+                    Delete
+              | Some fields ->
+                  Unbox fields
+            )
+            code_dep.return kinds
+        end
+      ) code_deps
   in
   let should_keep_param cont param kind =
     let keep_all_parameters =
@@ -1129,11 +1192,13 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
   in
   let env =
     { uses = solved_dep;
+      code_deps;
       get_code_metadata;
       cont_params_to_keep;
       should_keep_param;
       function_params_to_keep;
-      should_keep_function_param
+      should_keep_function_param;
+      function_return_decision
     }
   in
   let rebuilt_expr =
@@ -1145,3 +1210,4 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
     all_code = !all_code;
     slot_offsets = !all_slot_offsets
   }
+
