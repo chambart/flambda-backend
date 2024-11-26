@@ -804,7 +804,7 @@ type result =
     kinds : Flambda_kind.t Name.Map.t;
     fixed_arity_continuations : Continuation.Set.t;
     continuation_info : Acc.continuation_info Continuation.Map.t;
-    code_deps : Traverse_acc.code_dep Code_id.Map.t;
+    code_deps : Traverse_acc.code_dep Code_id.Map.t
   }
 
 let run (unit : Flambda_unit.t) =
@@ -864,4 +864,10 @@ let run (unit : Flambda_unit.t) =
     let debug_print = Flambda_features.dump_reaper () in
     if false && debug_print then Dot.print_dep (code_deps, deps)
   in
-  { holed; deps; kinds; fixed_arity_continuations; continuation_info; code_deps }
+  { holed;
+    deps;
+    kinds;
+    fixed_arity_continuations;
+    continuation_info;
+    code_deps
+  }

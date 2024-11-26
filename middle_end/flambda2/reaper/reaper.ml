@@ -26,7 +26,13 @@ let unit_with_body (unit : Flambda_unit.t) (body : Flambda.Expr.t) =
 let run ~cmx_loader ~all_code (unit : Flambda_unit.t) =
   let debug_print = Flambda_features.dump_reaper () in
   let Traverse.
-        { holed; deps; kinds; fixed_arity_continuations; continuation_info; code_deps } =
+        { holed;
+          deps;
+          kinds;
+          fixed_arity_continuations;
+          continuation_info;
+          code_deps
+        } =
     Traverse.run unit
   in
   if debug_print
@@ -43,8 +49,8 @@ let run ~cmx_loader ~all_code (unit : Flambda_unit.t) =
       Dot_printer.Dual.print solved_dep.dual_graph)
   in
   let Rebuild.{ body; free_names; all_code; slot_offsets } =
-    Rebuild.rebuild ~code_deps ~fixed_arity_continuations ~continuation_info kinds
-      solved_dep
+    Rebuild.rebuild ~code_deps ~fixed_arity_continuations ~continuation_info
+      kinds solved_dep
       (fun code_id ->
         Code_or_metadata.code_metadata (Exported_code.find_exn all_code code_id))
       holed
