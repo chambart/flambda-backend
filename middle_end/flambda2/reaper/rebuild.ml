@@ -628,6 +628,58 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
         in
         begin
           match let_.bound_pattern with
+          | Bound_pattern.Set_of_closures bvs
+            when List.exists (fun bv -> Code_id_or_name.Map.mem
+                   (Code_id_or_name.var (Bound_var.var bv))
+                   env.uses.unboxed_fields) bvs ->
+            assert(List.for_all (fun bv -> Code_id_or_name.Map.mem
+                    (Code_id_or_name.var (Bound_var.var bv))
+                    env.uses.unboxed_fields) bvs);
+            List.fold_left (fun hole bv ->
+                let to_bind =
+                  Code_id_or_name.Map.find
+                    (Code_id_or_name.var (Bound_var.var bv))
+                    env.uses.unboxed_fields
+                in
+                let value_slots =
+                  match let_.defining_expr with
+                  | Named (Set_of_closures _set) ->
+                      (* Possible ? *)
+                      assert false
+                      (* Set_of_closures.value_slots set *)
+                  | Set_of_closures set ->
+                    set.value_slots
+                  | _ ->
+                      assert false
+                in
+                Field.Map.fold
+                  (fun (field : Global_flow_graph.Field.t) var hole ->
+                      match field with
+                      | Value_slot value_slot ->
+                        let arg = Value_slot.Map.find value_slot value_slots in
+                        if simple_is_unboxable env arg
+                        then
+                          bind_fields var (Dep_solver.Unboxed (get_simple_unboxable env arg)) hole
+                        else begin
+                          let var =
+                            match var with
+                            | Dep_solver.Not_unboxed var -> var
+                            | Dep_solver.Unboxed _ ->
+                              Misc.fatal_errorf "Trying to unbox non-unboxable"
+                          in
+                          let bp =
+                            Bound_pattern.singleton
+                              (Bound_var.create var Name_mode.normal)
+                          in
+                          RE.create_let bp (Named.create_simple arg) ~body:hole
+                        end
+                      | Block _ | Is_int | Get_tag
+                      | Function_slot _ | Code_of_closure
+                      | Apply _ ->
+                        assert false
+                    )
+                  to_bind hole
+              ) hole bvs
           | Bound_pattern.Singleton bv
             when Code_id_or_name.Map.mem
                    (Code_id_or_name.var (Bound_var.var bv))
