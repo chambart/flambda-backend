@@ -18,7 +18,7 @@ module Graph = Global_flow_graph
 type continuation_info =
   { is_exn_handler : bool;
     params : Variable.t list;
-    arity : Flambda_kind.With_subkind.t list;
+    arity : Flambda_kind.With_subkind.t list
   }
 
 module Env = struct

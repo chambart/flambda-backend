@@ -37,11 +37,16 @@ type env =
     get_code_metadata : Code_id.t -> Code_metadata.t;
     (* TODO change names *)
     cont_params_to_keep : param_decision list Continuation.Map.t;
-    should_keep_param : Continuation.t -> Variable.t -> Flambda_kind.With_subkind.t -> param_decision;
+    should_keep_param :
+      Continuation.t ->
+      Variable.t ->
+      Flambda_kind.With_subkind.t ->
+      param_decision;
     (* TODO same here *)
     function_params_to_keep : param_decision list Code_id.Map.t;
-    should_keep_function_param : Code_id.t -> Variable.t -> Flambda_kind.With_subkind.t -> param_decision;
-    function_return_decision : param_decision list Code_id.Map.t;
+    should_keep_function_param :
+      Code_id.t -> Variable.t -> Flambda_kind.With_subkind.t -> param_decision;
+    function_return_decision : param_decision list Code_id.Map.t
   }
 
 let is_used (env : env) cn = Hashtbl.mem env.uses.uses cn
@@ -64,7 +69,11 @@ let poison kind = Simple.const_int_of_kind kind poison_value
 let rewrite_simple kinds (env : env) simple =
   Simple.pattern_match simple
     ~name:(fun name ~coercion:_ ->
-      assert(not (Code_id_or_name.Map.mem (Code_id_or_name.name name) env.uses.unboxed_fields));
+      assert (
+        not
+          (Code_id_or_name.Map.mem
+             (Code_id_or_name.name name)
+             env.uses.unboxed_fields));
       if is_name_used env name
       then simple
       else
@@ -299,64 +308,86 @@ let rec fold2_unboxed_subset (f : 'a -> 'b -> 'c -> 'c)
         fold2_unboxed_subset f f1 f2 acc)
       fields1 acc
 
-let rec fold2_unboxed_subset_with_kind (f : Flambda_kind.t -> 'a -> 'b -> 'c -> 'c)
+let rec fold2_unboxed_subset_with_kind
+    (f : Flambda_kind.t -> 'a -> 'b -> 'c -> 'c)
     (fields1 : 'a Dep_solver.unboxed_fields Field.Map.t)
     (fields2 : 'b Dep_solver.unboxed_fields Field.Map.t) acc =
-  Field.Map.fold (fun field f1 acc ->
+  Field.Map.fold
+    (fun field f1 acc ->
       let f2 = Field.Map.find field fields2 in
-  match (f1, f2 : _ Dep_solver.unboxed_fields * _ Dep_solver.unboxed_fields) with
-  | Not_unboxed x1, Not_unboxed x2 -> f (field_kind field) x1 x2 acc
-  | Not_unboxed _, Unboxed _ | Unboxed _, Not_unboxed _ ->
-    Misc.fatal_errorf "[fold2_unboxed_subset]"
-  | Unboxed fields1, Unboxed fields2 ->
-      fold2_unboxed_subset_with_kind f fields1 fields2 acc)
+      match
+        (f1, f2 : _ Dep_solver.unboxed_fields * _ Dep_solver.unboxed_fields)
+      with
+      | Not_unboxed x1, Not_unboxed x2 -> f (field_kind field) x1 x2 acc
+      | Not_unboxed _, Unboxed _ | Unboxed _, Not_unboxed _ ->
+        Misc.fatal_errorf "[fold2_unboxed_subset]"
+      | Unboxed fields1, Unboxed fields2 ->
+        fold2_unboxed_subset_with_kind f fields1 fields2 acc)
     fields1 acc
 
 let get_parameters params_decisions =
-  List.fold_left (fun acc param_decision ->
+  List.fold_left
+    (fun acc param_decision ->
       match param_decision with
       | Delete -> acc
       | Keep (var, kind) -> Bound_parameter.create var kind :: acc
       | Unbox fields ->
-          fold_unboxed_with_kind (fun kind v acc ->
-              Bound_parameter.create v (Flambda_kind.With_subkind.anything kind) :: acc)
-            fields acc
-    ) [] params_decisions |> List.rev
+        fold_unboxed_with_kind
+          (fun kind v acc ->
+            Bound_parameter.create v (Flambda_kind.With_subkind.anything kind)
+            :: acc)
+          fields acc)
+    [] params_decisions
+  |> List.rev
 
 let get_args kinds env params_decisions args =
-  List.fold_left2 (fun acc arg param_decision ->
-    match param_decision with
+  List.fold_left2
+    (fun acc arg param_decision ->
+      match param_decision with
       | Delete -> acc
       | Keep _ -> rewrite_simple kinds env arg :: acc
       | Unbox fields ->
         let arg_fields = get_simple_unboxable env arg in
-        fold2_unboxed_subset_with_kind (fun _kind _param arg_field acc ->
-            Simple.var arg_field :: acc)
-          fields arg_fields acc
-    ) [] args params_decisions |> List.rev
+        fold2_unboxed_subset_with_kind
+          (fun _kind _param arg_field acc -> Simple.var arg_field :: acc)
+          fields arg_fields acc)
+    [] args params_decisions
+  |> List.rev
 
 let get_args_with_kinds kinds env params_decisions args =
-  List.fold_left2 (fun acc arg param_decision ->
-    match param_decision with
+  List.fold_left2
+    (fun acc arg param_decision ->
+      match param_decision with
       | Delete -> acc
       | Keep (_, kind) -> (rewrite_simple kinds env arg, kind) :: acc
       | Unbox fields ->
         let arg_fields = get_simple_unboxable env arg in
-        fold2_unboxed_subset_with_kind (fun kind _param arg_field acc ->
-            (Simple.var arg_field, Flambda_kind.With_subkind.anything kind) :: acc)
-          fields arg_fields acc
-    ) [] args params_decisions |> List.rev
+        fold2_unboxed_subset_with_kind
+          (fun kind _param arg_field acc ->
+            (Simple.var arg_field, Flambda_kind.With_subkind.anything kind)
+            :: acc)
+          fields arg_fields acc)
+    [] args params_decisions
+  |> List.rev
 
 let get_arity params_decisions =
-  let arity = List.fold_left (fun acc param_decision ->
-      match param_decision with
-      | Delete -> acc
-      | Keep (_, kind) -> kind :: acc
-      | Unbox fields ->
-          fold_unboxed_with_kind (fun kind _ acc -> Flambda_kind.With_subkind.anything kind :: acc) fields acc)
-    [] params_decisions |> List.rev in
-  Flambda_arity.(create
-                   [Unboxed_product (List.map (fun k -> Component_for_creation.Singleton k) arity)])
+  let arity =
+    List.fold_left
+      (fun acc param_decision ->
+        match param_decision with
+        | Delete -> acc
+        | Keep (_, kind) -> kind :: acc
+        | Unbox fields ->
+          fold_unboxed_with_kind
+            (fun kind _ acc -> Flambda_kind.With_subkind.anything kind :: acc)
+            fields acc)
+      [] params_decisions
+    |> List.rev
+  in
+  Flambda_arity.(
+    create
+      [ Unboxed_product
+          (List.map (fun k -> Component_for_creation.Singleton k) arity) ])
 
 let rewrite_named kinds env (named : Named.t) =
   let[@local] rewrite_field_access arg field =
@@ -390,13 +421,12 @@ let rewrite_named kinds env (named : Named.t) =
     Named.create_static_consts (rewrite_static_const_group kinds env sc)
   | Rec_info r -> Named.create_rec_info r
 
-
 let rewrite_apply_cont_expr kinds env ac =
   let cont = Apply_cont_expr.continuation ac in
   let args = Apply_cont_expr.args ac in
   let args =
-      let args_to_keep = Continuation.Map.find cont env.cont_params_to_keep in
-      get_args kinds env args_to_keep args
+    let args_to_keep = Continuation.Map.find cont env.cont_params_to_keep in
+    get_args kinds env args_to_keep args
   in
   Apply_cont_expr.with_continuation_and_args ac cont ~args
 
@@ -427,7 +457,7 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
                (Switch_expr.arms switch))
       in
       Expr.create_switch switch, Switch_expr.free_names switch
-    | Apply apply ->
+    | Apply apply -> (
       (* CR ncourant: we never rewrite alloc_mode. This is currently ok because
          we never remove begin- or end-region primitives, but might be needed
          later if we chose to handle them. *)
@@ -457,16 +487,16 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
       in
       let updating_calling_convention =
         match[@ocaml.warning "-4"] call_kind with
-        | Function { function_call = Direct code_id; _ } -> begin
-            match Code_id.Map.find_opt code_id env.code_deps with
-            | None -> Not_changing_calling_convention
-            | Some code_dep ->
-                let can_be_called_indirectly =
-                  Hashtbl.mem env.uses.uses code_dep.indirect_call_witness
-                in
-                if can_be_called_indirectly then Not_changing_calling_convention
-                else Changing_calling_convention code_id
-          end
+        | Function { function_call = Direct code_id; _ } -> (
+          match Code_id.Map.find_opt code_id env.code_deps with
+          | None -> Not_changing_calling_convention
+          | Some code_dep ->
+            let can_be_called_indirectly =
+              Hashtbl.mem env.uses.uses code_dep.indirect_call_witness
+            in
+            if can_be_called_indirectly
+            then Not_changing_calling_convention
+            else Changing_calling_convention code_id)
         | _ -> Not_changing_calling_convention
       in
       let exn_continuation = Apply.exn_continuation apply in
@@ -476,45 +506,44 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
           let selected_extra_args =
             let extra_args = Exn_continuation.extra_args exn_continuation in
             (* try *)
-              let args_to_keep =
-                Continuation.Map.find exn_handler env.cont_params_to_keep
-                |> List.tl
-                (* This contains the exn argument that is not part of the extra
-                   args *)
-              in
-              get_args_with_kinds kinds env args_to_keep (List.map fst extra_args)
-            (* with Not_found ->
-              (* Not defined in cont_params_to_keep *)
-              extra_args *)
+            let args_to_keep =
+              Continuation.Map.find exn_handler env.cont_params_to_keep
+              |> List.tl
+              (* This contains the exn argument that is not part of the extra
+                 args *)
+            in
+            get_args_with_kinds kinds env args_to_keep (List.map fst extra_args)
+            (* with Not_found -> (* Not defined in cont_params_to_keep *)
+               extra_args *)
           in
-          (* List.map
-            (fun (simple, kind) -> rewrite_simple kinds env simple, kind) *)
-            selected_extra_args
+          (* List.map (fun (simple, kind) -> rewrite_simple kinds env simple,
+             kind) *)
+          selected_extra_args
         in
         Exn_continuation.create ~exn_handler ~extra_args
       in
       (* TODO rewrite return arity *)
-
-        match updating_calling_convention with
-        | Not_changing_calling_convention ->
-            let args = List.map (rewrite_simple kinds env) (Apply.args apply) in
-            let args_arity = Apply.args_arity apply in
-            let return_arity = Apply.return_arity apply in
-            let apply =
-              Apply.create
-                (* Note here that callee is rewritten with [rewrite_simple_opt], which
-                   will put [None] as the callee instead of a dummy value, as a dummy
-                   value would then be further used in a later simplify pass to refine
-                   the call kind and produce an invalid. *)
-                ~callee:(rewrite_simple_opt env (Apply.callee apply)) ~continuation:(Apply.continuation apply) exn_continuation
-                ~args ~args_arity ~return_arity ~call_kind
-                (Apply.dbg apply) ~inlined:(Apply.inlined apply)
-                ~inlining_state:(Apply.inlining_state apply)
-                ~probe:(Apply.probe apply) ~position:(Apply.position apply)
-                ~relative_history:(Apply.relative_history apply)
-            in
-            Expr.create_apply apply, Apply.free_names apply
-        | Changing_calling_convention code_id ->
+      match updating_calling_convention with
+      | Not_changing_calling_convention ->
+        let args = List.map (rewrite_simple kinds env) (Apply.args apply) in
+        let args_arity = Apply.args_arity apply in
+        let return_arity = Apply.return_arity apply in
+        let apply =
+          Apply.create
+          (* Note here that callee is rewritten with [rewrite_simple_opt], which
+             will put [None] as the callee instead of a dummy value, as a dummy
+             value would then be further used in a later simplify pass to refine
+             the call kind and produce an invalid. *)
+            ~callee:(rewrite_simple_opt env (Apply.callee apply))
+            ~continuation:(Apply.continuation apply) exn_continuation ~args
+            ~args_arity ~return_arity ~call_kind (Apply.dbg apply)
+            ~inlined:(Apply.inlined apply)
+            ~inlining_state:(Apply.inlining_state apply)
+            ~probe:(Apply.probe apply) ~position:(Apply.position apply)
+            ~relative_history:(Apply.relative_history apply)
+        in
+        Expr.create_apply apply, Apply.free_names apply
+      | Changing_calling_convention code_id ->
         (* TODO unbox other args fields *)
 
         (* List.concat_map (fun simple -> *)
@@ -525,57 +554,57 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
         (*         fields [] *)
         (*     else *)
         (*       [rewrite_simple kinds env simple] *)
-            (*   ) (Apply.args apply) *)
+        (* ) (Apply.args apply) *)
         let args_for_callee, callee =
-        match Apply.callee apply with
-        | Some callee when simple_is_unboxable env callee ->
-          let fields = get_simple_unboxable env callee in
-          let new_args = fold_unboxed_with_kind
-              (fun kind v acc -> (Simple.var v, Flambda_kind.With_subkind.anything kind) :: acc)
-              fields [] in
-          new_args, None
-        | (None | Some _) as callee ->
-            [],
-                (* Note here that callee is rewritten with [rewrite_simple_opt], which
-                   will put [None] as the callee instead of a dummy value, as a dummy
-                   value would then be further used in a later simplify pass to refine
-                   the call kind and produce an invalid. *)
-
-            rewrite_simple_opt env callee
+          match Apply.callee apply with
+          | Some callee when simple_is_unboxable env callee ->
+            let fields = get_simple_unboxable env callee in
+            let new_args =
+              fold_unboxed_with_kind
+                (fun kind v acc ->
+                  (Simple.var v, Flambda_kind.With_subkind.anything kind) :: acc)
+                fields []
+            in
+            new_args, None
+          | (None | Some _) as callee ->
+            ( [],
+              (* Note here that callee is rewritten with [rewrite_simple_opt],
+                 which will put [None] as the callee instead of a dummy value,
+                 as a dummy value would then be further used in a later simplify
+                 pass to refine the call kind and produce an invalid. *)
+              rewrite_simple_opt env callee )
         in
         let params_decisions =
           match Code_id.Map.find_opt code_id env.function_params_to_keep with
           | None -> assert false
           | Some p -> p
         in
-        let args = get_args_with_kinds kinds env params_decisions (Apply.args apply) in
+        let args =
+          get_args_with_kinds kinds env params_decisions (Apply.args apply)
+        in
         let args = args @ args_for_callee in
         let args_arity =
-            let components =
-              List.map
-                (fun (_, k) -> Flambda_arity.Component_for_creation.Singleton k)
-                args
-            in
-            Flambda_arity.create [Unboxed_product components]
-        in
-
-        let return_arity =
-            Flambda_arity.unarize_t (get_arity (Code_id.Map.find code_id env.function_return_decision))
+          let components =
+            List.map
+              (fun (_, k) -> Flambda_arity.Component_for_creation.Singleton k)
+              args
           in
-
-          let args = (List.map fst args) in
-          let apply =
-              Apply.create
-                ~callee ~continuation:(Apply.continuation apply) exn_continuation
-                ~args ~args_arity ~return_arity ~call_kind
-                (Apply.dbg apply) ~inlined:(Apply.inlined apply)
-                ~inlining_state:(Apply.inlining_state apply)
-                ~probe:(Apply.probe apply) ~position:(Apply.position apply)
-                ~relative_history:(Apply.relative_history apply)
-            in
-            Expr.create_apply apply, Apply.free_names apply
-
-
+          Flambda_arity.create [Unboxed_product components]
+        in
+        let return_arity =
+          Flambda_arity.unarize_t
+            (get_arity (Code_id.Map.find code_id env.function_return_decision))
+        in
+        let args = List.map fst args in
+        let apply =
+          Apply.create ~callee ~continuation:(Apply.continuation apply)
+            exn_continuation ~args ~args_arity ~return_arity ~call_kind
+            (Apply.dbg apply) ~inlined:(Apply.inlined apply)
+            ~inlining_state:(Apply.inlining_state apply)
+            ~probe:(Apply.probe apply) ~position:(Apply.position apply)
+            ~relative_history:(Apply.relative_history apply)
+        in
+        Expr.create_apply apply, Apply.free_names apply)
   in
   rebuild_holed kinds env holed_expr (RE.from_expr ~expr ~free_names)
 
@@ -594,10 +623,10 @@ and rebuild_function_params_and_body (kinds : Flambda_kind.t Name.Map.t)
   in
   let code_metadata =
     Code_metadata.with_result_arity
-      (
-          Flambda_arity.unarize_t (get_arity (Continuation.Map.find return_continuation env.cont_params_to_keep))
-
-      ) code_metadata
+      (Flambda_arity.unarize_t
+         (get_arity
+            (Continuation.Map.find return_continuation env.cont_params_to_keep)))
+      code_metadata
   in
   let params, code_metadata =
     match
@@ -823,62 +852,61 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                 env.uses.unboxed_fields
             in
             let load_field field arg dbg =
-                let oarg = arg in
+              let oarg = arg in
+              let arg =
+                Simple.pattern_match arg
+                  ~const:(fun _ ->
+                    Misc.fatal_error "Loading unboxed from constant")
+                  ~name:(fun name ~coercion:_ -> name)
+              in
+              let arg = Code_id_or_name.name arg in
+              match
+                Code_id_or_name.Map.find_opt arg env.uses.unboxed_fields
+              with
+              | Some arg ->
+                bind_fields (Dep_solver.Unboxed to_bind)
+                  (Field.Map.find field arg) hole
+              | None ->
+                assert (
+                  Code_id_or_name.Map.mem arg env.uses.changed_representation);
                 let arg =
-                  Simple.pattern_match arg
-                    ~const:(fun _ ->
-                      Misc.fatal_error "Loading unboxed from constant")
-                    ~name:(fun name ~coercion:_ -> name)
+                  Code_id_or_name.Map.find arg env.uses.changed_representation
                 in
-                let arg = Code_id_or_name.name arg in
-                match
-                  Code_id_or_name.Map.find_opt arg env.uses.unboxed_fields
-                with
-                | Some arg ->
-                  bind_fields (Dep_solver.Unboxed to_bind)
-                    (Field.Map.find field arg) hole
-                | None ->
-                  assert (
-                    Code_id_or_name.Map.mem arg env.uses.changed_representation);
-                  let arg =
-                    Code_id_or_name.Map.find arg env.uses.changed_representation
-                  in
-                  let arg = Field.Map.find field arg in
-                  fold2_unboxed_subset
-                    (fun var located_in hole ->
-                      let bp =
-                        Bound_pattern.singleton
-                          (Bound_var.create var Name_mode.normal)
-                      in
-                      let named =
-                        match (located_in : Field.t) with
-                        | Block (i, _kind) ->
-                          Named.create_prim
-                            (Flambda_primitive.Unary
-                               ( Block_load
-                                   { field = Targetint_31_63.of_int i;
-                                     kind =
-                                       Flambda_primitive.Block_access_kind
-                                       .Values
-                                         { tag = Unknown;
-                                           size = Unknown;
-                                           field_kind =
-                                             Flambda_primitive
-                                             .Block_access_field_kind
-                                             .Any_value
-                                         };
-                                     mut = Immutable
-                                   },
-                                 oarg ))
-                            dbg
-                        | Value_slot _ -> failwith "todo"
-                        | Function_slot _ -> failwith "todo"
-                        | Is_int | Get_tag | Code_of_closure | Apply _ ->
-                          failwith "todo"
-                      in
-                      RE.create_let bp named ~body:hole)
-                    (Dep_solver.Unboxed to_bind) arg hole
-      in
+                let arg = Field.Map.find field arg in
+                fold2_unboxed_subset
+                  (fun var located_in hole ->
+                    let bp =
+                      Bound_pattern.singleton
+                        (Bound_var.create var Name_mode.normal)
+                    in
+                    let named =
+                      match (located_in : Field.t) with
+                      | Block (i, _kind) ->
+                        Named.create_prim
+                          (Flambda_primitive.Unary
+                             ( Block_load
+                                 { field = Targetint_31_63.of_int i;
+                                   kind =
+                                     Flambda_primitive.Block_access_kind.Values
+                                       { tag = Unknown;
+                                         size = Unknown;
+                                         field_kind =
+                                           Flambda_primitive
+                                           .Block_access_field_kind
+                                           .Any_value
+                                       };
+                                   mut = Immutable
+                                 },
+                               oarg ))
+                          dbg
+                      | Value_slot _ -> failwith "todo"
+                      | Function_slot _ -> failwith "todo"
+                      | Is_int | Get_tag | Code_of_closure | Apply _ ->
+                        failwith "todo"
+                    in
+                    RE.create_let bp named ~body:hole)
+                  (Dep_solver.Unboxed to_bind) arg hole
+            in
             match let_.defining_expr with
             | Named named -> (
               match named with
@@ -931,7 +959,10 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                         kind )
                 in
                 load_field field arg dbg
-              | Prim (Unary (Project_value_slot {value_slot; project_from = _}, arg), dbg) ->
+              | Prim
+                  ( Unary
+                      (Project_value_slot { value_slot; project_from = _ }, arg),
+                    dbg ) ->
                 let field = Field.Value_slot value_slot in
                 load_field field arg dbg
               | Simple arg ->
@@ -1046,9 +1077,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
     in
     let cont_handler =
       let handler = rebuild_expr kinds env expr in
-      let l =
-        get_parameters parameters_to_keep
-      in
+      let l = get_parameters parameters_to_keep in
       let l =
         List.concat_map
           (fun param ->
@@ -1079,7 +1108,15 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
     (* TODO unboxed parameters *)
     let filter_params cont params =
       let params = Bound_parameters.to_list params in
-      let params = get_parameters (List.map (fun param -> env.should_keep_param cont (Bound_parameter.var param) (Bound_parameter.kind param)) params) in
+      let params =
+        get_parameters
+          (List.map
+             (fun param ->
+               env.should_keep_param cont
+                 (Bound_parameter.var param)
+                 (Bound_parameter.kind param))
+             params)
+      in
       Bound_parameters.create params
     in
     let handlers =
@@ -1119,27 +1156,26 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
     let can_be_called_indirectly =
       Hashtbl.mem solved_dep.uses code_dep.indirect_call_witness
     in
-    if can_be_called_indirectly then
-      (fun var kind ->
-         assert (not (Code_id_or_name.Map.mem (Code_id_or_name.var var) solved_dep.unboxed_fields));
-         Keep (var, kind))
+    if can_be_called_indirectly
+    then (fun var kind ->
+      assert (
+        not
+          (Code_id_or_name.Map.mem (Code_id_or_name.var var)
+             solved_dep.unboxed_fields));
+      Keep (var, kind))
     else
       fun param kind ->
-        match
-          Code_id_or_name.Map.find_opt
-            (Code_id_or_name.var param)
-            solved_dep.unboxed_fields
-        with
-        | None ->
-            let is_var_used =
-              Hashtbl.mem solved_dep.uses (Code_id_or_name.var param)
-            in
-            if is_var_used then
-              Keep (param, kind)
-            else
-              Delete
-        | Some fields ->
-            Unbox fields
+      match
+        Code_id_or_name.Map.find_opt
+          (Code_id_or_name.var param)
+          solved_dep.unboxed_fields
+      with
+      | None ->
+        let is_var_used =
+          Hashtbl.mem solved_dep.uses (Code_id_or_name.var param)
+        in
+        if is_var_used then Keep (param, kind) else Delete
+      | Some fields -> Unbox fields
   in
   let function_params_to_keep =
     Code_id.Map.map
@@ -1154,50 +1190,55 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
     | Some code_dep -> should_keep_function_param code_dep
   in
   let function_return_decision =
-    Code_id.Map.mapi (fun code_id (code_dep : Traverse_acc.code_dep) ->
+    Code_id.Map.mapi
+      (fun code_id (code_dep : Traverse_acc.code_dep) ->
         let can_be_called_indirectly =
           Hashtbl.mem solved_dep.uses code_dep.indirect_call_witness
         in
         let metadata = get_code_metadata code_id in
-        let kinds = Flambda_arity.unarized_components (Code_metadata.result_arity metadata) in
-        if can_be_called_indirectly then
-          List.map2 (fun v kind ->
-              Keep (v, kind)
-            )
-            code_dep.return kinds
-        else begin
-          List.map2 (fun v kind ->
-              match Code_id_or_name.Map.find_opt (Code_id_or_name.var v) solved_dep.unboxed_fields with
+        let kinds =
+          Flambda_arity.unarized_components
+            (Code_metadata.result_arity metadata)
+        in
+        if can_be_called_indirectly
+        then List.map2 (fun v kind -> Keep (v, kind)) code_dep.return kinds
+        else
+          List.map2
+            (fun v kind ->
+              match
+                Code_id_or_name.Map.find_opt (Code_id_or_name.var v)
+                  solved_dep.unboxed_fields
+              with
               | None ->
-                  let is_var_used =
-                    Hashtbl.mem solved_dep.uses (Code_id_or_name.var v)
-                  in
-                  if is_var_used then
-                    Keep (v, kind)
-                  else
-                    Delete
-              | Some fields ->
-                  Unbox fields
-            )
-            code_dep.return kinds
-        end
-      ) code_deps
+                let is_var_used =
+                  Hashtbl.mem solved_dep.uses (Code_id_or_name.var v)
+                in
+                if is_var_used then Keep (v, kind) else Delete
+              | Some fields -> Unbox fields)
+            code_dep.return kinds)
+      code_deps
   in
   let should_keep_param cont param kind =
     let keep_all_parameters =
       Continuation.Set.mem cont fixed_arity_continuations
     in
-    match Code_id_or_name.Map.find_opt (Code_id_or_name.var param) solved_dep.unboxed_fields with
+    match
+      Code_id_or_name.Map.find_opt
+        (Code_id_or_name.var param)
+        solved_dep.unboxed_fields
+    with
     | None ->
-        if
-    keep_all_parameters
-    ||
-    let is_var_used = Hashtbl.mem solved_dep.uses (Code_id_or_name.var param) in
-    is_var_used
-    ||
-    let info = Continuation.Map.find cont continuation_info in
-    info.is_exn_handler && Variable.equal param (List.hd info.params) then
-          Keep (param, kind) else Delete
+      if keep_all_parameters
+         ||
+         let is_var_used =
+           Hashtbl.mem solved_dep.uses (Code_id_or_name.var param)
+         in
+         is_var_used
+         ||
+         let info = Continuation.Map.find cont continuation_info in
+         info.is_exn_handler && Variable.equal param (List.hd info.params)
+      then Keep (param, kind)
+      else Delete
     | Some fields -> Unbox fields
   in
   let cont_params_to_keep =
@@ -1226,4 +1267,3 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
     all_code = !all_code;
     slot_offsets = !all_slot_offsets
   }
-

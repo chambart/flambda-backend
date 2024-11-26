@@ -448,7 +448,9 @@ and traverse_let_cont_non_recursive denv acc cont ~body handler =
   let traverse handler acc =
     Acc.continuation_info acc cont
       { params = Bound_parameters.vars handler.bound_parameters;
-        arity = Flambda_arity.unarize (Bound_parameters.arity handler.bound_parameters);
+        arity =
+          Flambda_arity.unarize
+            (Bound_parameters.arity handler.bound_parameters);
         is_exn_handler = Continuation_handler.is_exn_handler cont_handler
       };
     let conts =
@@ -477,7 +479,9 @@ and traverse_let_cont_non_recursive denv acc cont ~body handler =
 
 and traverse_let_cont_recursive denv acc ~invariant_params ~body handlers =
   let invariant_params_vars = Bound_parameters.vars invariant_params in
-  let invariant_params_arity = Flambda_arity.unarize (Bound_parameters.arity invariant_params) in
+  let invariant_params_arity =
+    Flambda_arity.unarize (Bound_parameters.arity invariant_params)
+  in
   let handlers =
     Continuation.Map.map
       (fun cont_handler ->
@@ -490,7 +494,10 @@ and traverse_let_cont_recursive denv acc ~invariant_params ~body handlers =
     Continuation.Map.fold
       (fun cont (_, bp, _) conts ->
         let params = invariant_params_vars @ Bound_parameters.vars bp in
-        let arity = invariant_params_arity @ (Flambda_arity.unarize (Bound_parameters.arity bp)) in
+        let arity =
+          invariant_params_arity
+          @ Flambda_arity.unarize (Bound_parameters.arity bp)
+        in
         Acc.continuation_info acc cont { params; is_exn_handler = false; arity };
         Continuation.Map.add cont (Normal params) conts)
       handlers denv.conts
@@ -748,9 +755,17 @@ and traverse_function_params_and_body acc code_id code ~return_continuation
       [return_continuation, Normal return; exn_continuation, Normal [exn]]
   in
   Acc.continuation_info acc return_continuation
-    { is_exn_handler = false; params = return; arity = Flambda_arity.unarized_components (Code_metadata.result_arity code_metadata) };
+    { is_exn_handler = false;
+      params = return;
+      arity =
+        Flambda_arity.unarized_components
+          (Code_metadata.result_arity code_metadata)
+    };
   Acc.continuation_info acc exn_continuation
-    { is_exn_handler = true; params = [exn]; arity = [Flambda_kind.With_subkind.any_value] };
+    { is_exn_handler = true;
+      params = [exn];
+      arity = [Flambda_kind.With_subkind.any_value]
+    };
   Acc.fixed_arity_continuation acc return_continuation;
   Acc.fixed_arity_continuation acc exn_continuation;
   let denv =
@@ -843,9 +858,15 @@ let run (unit : Flambda_unit.t) =
           exn_continuation, Normal [dummy_toplevel_exn] ]
     in
     Acc.continuation_info acc return_continuation
-      { is_exn_handler = false; params = [dummy_toplevel_return]; arity = [Flambda_kind.With_subkind.any_value] };
+      { is_exn_handler = false;
+        params = [dummy_toplevel_return];
+        arity = [Flambda_kind.With_subkind.any_value]
+      };
     Acc.continuation_info acc exn_continuation
-      { is_exn_handler = true; params = [dummy_toplevel_exn]; arity = [Flambda_kind.With_subkind.any_value] };
+      { is_exn_handler = true;
+        params = [dummy_toplevel_exn];
+        arity = [Flambda_kind.With_subkind.any_value]
+      };
     Acc.fixed_arity_continuation acc return_continuation;
     Acc.fixed_arity_continuation acc exn_continuation;
     traverse
