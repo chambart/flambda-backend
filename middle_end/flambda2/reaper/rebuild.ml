@@ -483,7 +483,7 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
   rebuild_holed kinds env holed_expr (RE.from_expr ~expr ~free_names)
 
 and rebuild_function_params_and_body (kinds : Flambda_kind.t Name.Map.t)
-    (env : env) (params_and_body : rev_params_and_body) =
+    (env : env) code_metadata (params_and_body : rev_params_and_body) =
   let { return_continuation;
         exn_continuation;
         params;
@@ -495,25 +495,43 @@ and rebuild_function_params_and_body (kinds : Flambda_kind.t Name.Map.t)
       } =
     params_and_body
   in
-  let params =
+  let params, code_metadata =
     match Code_id_or_name.Map.find_opt (Code_id_or_name.var my_closure) env.uses.unboxed_fields with
-    | None -> params
+    | None -> params, code_metadata
     | Some fields ->
-        Format.printf "@.@.UNBOXABLE CLOSURE %a@.@." Variable.print params_and_body.my_closure;
         let new_params =
           fold_unboxed_with_kind (fun kind v acc ->
               Bound_parameter.create v (Flambda_kind.With_subkind.anything kind) :: acc)
             fields []
         in
-        Bound_parameters.append params
-          (Bound_parameters.create new_params)
+        let params =
+          Bound_parameters.append params
+            (Bound_parameters.create new_params)
+        in
+        let params_arity =
+          let added_kinds =
+            List.map Bound_parameter.kind new_params
+          in
+          let params_arity = Code_metadata.params_arity code_metadata in
+          let kinds = Flambda_arity.unarize params_arity @ added_kinds in
+          let components =
+            List.map (fun k -> Flambda_arity.Component_for_creation.Singleton k) kinds
+          in
+          Flambda_arity.create [Unboxed_product components]
+        in
+        let code_metadata =
+          Code_metadata.with_is_my_closure_used false
+            (Code_metadata.with_params_arity params_arity code_metadata)
+        in
+        params, code_metadata
   in
   let body = rebuild_expr kinds env body in
   (* assert (List.exists Fun.id (Continuation.Map.find return_continuation
      env.cont_params_to_keep)); *)
   Function_params_and_body.create ~return_continuation ~exn_continuation params
     ~body:body.expr ~free_names_of_body:(Known body.free_names) ~my_closure
-    ~my_region ~my_ghost_region ~my_depth
+    ~my_region ~my_ghost_region ~my_depth,
+    code_metadata
 
 and bind_fields fields arg_fields hole =
   fold2_unboxed_subset
@@ -580,9 +598,6 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                 let is_my_closure_used =
                   is_var_used env params_and_body.my_closure
                 in
-                let params_and_body =
-                  rebuild_function_params_and_body kinds env params_and_body
-                in
                 let code_metadata =
                   if Bool.equal is_my_closure_used
                        (Code_metadata.is_my_closure_used code_metadata)
@@ -591,6 +606,9 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                     assert (not is_my_closure_used);
                     Code_metadata.with_is_my_closure_used is_my_closure_used
                       code_metadata)
+                in
+                let params_and_body, code_metadata =
+                  rebuild_function_params_and_body kinds env code_metadata params_and_body
                 in
                 let code =
                   Code.create_with_metadata ~params_and_body ~code_metadata

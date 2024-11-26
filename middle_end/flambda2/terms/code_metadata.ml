@@ -227,6 +227,8 @@ let with_cost_metrics cost_metrics t = { t with cost_metrics }
 
 let with_is_my_closure_used is_my_closure_used t = { t with is_my_closure_used }
 
+let with_params_arity params_arity t = { t with params_arity }
+
 module Option = struct
   include Option
 
