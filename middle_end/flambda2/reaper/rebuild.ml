@@ -27,7 +27,7 @@ let all_slot_offsets = ref Slot_offsets.empty
 let all_code = ref Code_id.Map.empty
 
 type param_decision =
-  | Do_nothing
+  | Keep of Variable.t * Flambda_kind.With_subkind.t
   | Delete
   | Unbox of Variable.t Dep_solver.unboxed_fields Field.Map.t
 
@@ -36,7 +36,7 @@ type env =
     get_code_metadata : Code_id.t -> Code_metadata.t;
     (* TODO change names *)
     cont_params_to_keep : param_decision list Continuation.Map.t;
-    should_keep_param : Continuation.t -> Variable.t -> param_decision;
+    should_keep_param : Continuation.t -> Variable.t -> Flambda_kind.With_subkind.t -> param_decision;
     (* TODO same here *)
     function_params_to_keep : bool list Code_id.Map.t;
     should_keep_function_param : Code_id.t -> Variable.t -> bool
@@ -309,22 +309,22 @@ let rec fold2_unboxed_subset_with_kind (f : Flambda_kind.t -> 'a -> 'b -> 'c -> 
       fold2_unboxed_subset_with_kind f fields1 fields2 acc)
     fields1 acc
 
-let get_parameters params_decisions params =
-  List.fold_left2 (fun acc param param_decision ->
+let get_parameters params_decisions =
+  List.fold_left (fun acc param_decision ->
       match param_decision with
       | Delete -> acc
-      | Do_nothing -> param :: acc
+      | Keep (var, kind) -> Bound_parameter.create var kind :: acc
       | Unbox fields ->
           fold_unboxed_with_kind (fun kind v acc ->
               Bound_parameter.create v (Flambda_kind.With_subkind.anything kind) :: acc)
             fields acc
-    ) [] params params_decisions |> List.rev
+    ) [] params_decisions |> List.rev
 
 let get_args kinds env params_decisions args =
   List.fold_left2 (fun acc arg param_decision ->
     match param_decision with
       | Delete -> acc
-      | Do_nothing -> rewrite_simple kinds env arg :: acc
+      | Keep _ -> rewrite_simple kinds env arg :: acc
       | Unbox fields ->
         let arg_fields = get_simple_unboxable env arg in
         fold2_unboxed_subset_with_kind (fun _kind _param arg_field acc ->
@@ -336,13 +336,24 @@ let get_args_with_kinds kinds env params_decisions args =
   List.fold_left2 (fun acc (arg, kind) param_decision ->
     match param_decision with
       | Delete -> acc
-      | Do_nothing -> (rewrite_simple kinds env arg, kind) :: acc
+      | Keep _ -> (rewrite_simple kinds env arg, kind) :: acc
       | Unbox fields ->
         let arg_fields = get_simple_unboxable env arg in
         fold2_unboxed_subset_with_kind (fun kind _param arg_field acc ->
             (Simple.var arg_field, Flambda_kind.With_subkind.anything kind) :: acc)
           fields arg_fields acc
     ) [] args params_decisions |> List.rev
+
+let get_arity params_decisions =
+  let arity = List.fold_left (fun acc param_decision ->
+      match param_decision with
+      | Delete -> acc
+      | Keep (_, kind) -> kind :: acc
+      | Unbox fields ->
+          fold_unboxed_with_kind (fun kind _ acc -> Flambda_kind.With_subkind.anything kind :: acc) fields acc)
+    [] params_decisions |> List.rev in
+  Flambda_arity.(create
+                   [Unboxed_product (List.map (fun k -> Component_for_creation.Singleton k) arity)])
 
 let rewrite_named kinds env (named : Named.t) =
   let[@local] rewrite_field_access arg field =
@@ -438,6 +449,12 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
                ~f:(rewrite_simple f) ~arg:(rewrite_simple arg)
                ~last_fiber:(rewrite_simple last_fiber))
       in
+      let return_arity =
+        match Apply.continuation apply with
+        | Never_returns -> Apply.return_arity apply
+        | Return cont ->
+          Flambda_arity.unarize_t (get_arity (Continuation.Map.find cont env.cont_params_to_keep))
+      in
       let exn_continuation = Apply.exn_continuation apply in
       let exn_continuation =
         let exn_handler = Exn_continuation.exn_handler exn_continuation in
@@ -516,7 +533,7 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
            value would then be further used in a later simplify pass to refine
            the call kind and produce an invalid. *)
           ~callee ~continuation:(Apply.continuation apply) exn_continuation
-          ~args ~args_arity ~return_arity:(Apply.return_arity apply) ~call_kind
+          ~args ~args_arity ~return_arity ~call_kind
           (Apply.dbg apply) ~inlined:(Apply.inlined apply)
           ~inlining_state:(Apply.inlining_state apply)
           ~probe:(Apply.probe apply) ~position:(Apply.position apply)
@@ -538,6 +555,13 @@ and rebuild_function_params_and_body (kinds : Flambda_kind.t Name.Map.t)
         my_depth
       } =
     params_and_body
+  in
+  let code_metadata =
+    Code_metadata.with_result_arity
+      (
+          Flambda_arity.unarize_t (get_arity (Continuation.Map.find return_continuation env.cont_params_to_keep))
+
+      ) code_metadata
   in
   let params, code_metadata =
     match
@@ -980,7 +1004,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
       let v = Bound_var.var v in
       if is_var_used env v then default () else erase ())
   | Let_cont { cont; parent; handler } ->
-    let { bound_parameters; expr; is_exn_handler; is_cold } = handler in
+    let { bound_parameters = _; expr; is_exn_handler; is_cold } = handler in
     let parameters_to_keep =
       Continuation.Map.find cont env.cont_params_to_keep
     in
@@ -988,7 +1012,6 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
       let handler = rebuild_expr kinds env expr in
       let l =
         get_parameters parameters_to_keep
-          (Bound_parameters.to_list bound_parameters)
       in
       let l =
         List.concat_map
@@ -1020,7 +1043,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
     (* TODO unboxed parameters *)
     let filter_params cont params =
       let params = Bound_parameters.to_list params in
-      let params = get_parameters (List.map (fun param -> env.should_keep_param cont (Bound_parameter.var param)) params) params in
+      let params = get_parameters (List.map (fun param -> env.should_keep_param cont (Bound_parameter.var param) (Bound_parameter.kind param)) params) in
       Bound_parameters.create params
     in
     let handlers =
@@ -1081,7 +1104,7 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
     | None -> fun _ -> true
     | Some code_dep -> should_keep_function_param code_dep
   in
-  let should_keep_param cont param =
+  let should_keep_param cont param kind =
     let keep_all_parameters =
       Continuation.Set.mem cont fixed_arity_continuations
     in
@@ -1095,13 +1118,13 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
     ||
     let info = Continuation.Map.find cont continuation_info in
     info.is_exn_handler && Variable.equal param (List.hd info.params) then
-          Do_nothing else Delete
+          Keep (param, kind) else Delete
     | Some fields -> Unbox fields
   in
   let cont_params_to_keep =
     Continuation.Map.mapi
       (fun cont (info : Traverse_acc.continuation_info) ->
-        List.map (should_keep_param cont) info.params)
+        List.map2 (should_keep_param cont) info.params info.arity)
       continuation_info
   in
   let env =

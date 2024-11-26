@@ -229,6 +229,8 @@ let with_is_my_closure_used is_my_closure_used t = { t with is_my_closure_used }
 
 let with_params_arity params_arity t = { t with params_arity }
 
+let with_result_arity result_arity t = { t with result_arity }
+
 module Option = struct
   include Option
 
