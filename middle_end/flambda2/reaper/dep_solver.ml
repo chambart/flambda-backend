@@ -754,14 +754,15 @@ let map_from_allocation_points_to_dominated dual =
     dual;
   !map
 
-(* let rec mapi_unboxed_fields (not_unboxed : 'a -> 'b -> 'c) (unboxed : Field.t
+let rec mapi_unboxed_fields (not_unboxed : 'a -> 'b -> 'c) (unboxed : Field.t
    -> 'a -> 'a) (acc : 'a) (uf : 'b unboxed_fields) : 'c unboxed_fields = match
    uf with | Not_unboxed x -> Not_unboxed (not_unboxed acc x) | Unboxed f ->
    Unboxed (Field.Map.mapi (fun field uf -> mapi_unboxed_fields not_unboxed
    unboxed (unboxed field acc) uf) f)
 
-   let map_unboxed_fields f uf = mapi_unboxed_fields (fun () x -> f x) (fun _ ()
-   -> ()) () uf *)
+let map_unboxed_fields f uf = mapi_unboxed_fields (fun () x -> f x) (fun _ ()
+   -> ()) () uf
+
 let can_unbox dual dual_graph graph ~dominated_by_allocation_points
     allocation_id =
   can_change_representation ~for_destructuring_value:true dual graph

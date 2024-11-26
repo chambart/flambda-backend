@@ -61,6 +61,8 @@ type result =
       Code_id_or_name.Map.t
   }
 
+val map_unboxed_fields : ('a -> 'b) -> 'a unboxed_fields -> 'b unboxed_fields
+
 val pp_elt : Format.formatter -> elt -> unit
 
 val pp_result : Format.formatter -> use_result -> unit

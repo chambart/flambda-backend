@@ -49,6 +49,14 @@ type env =
     function_return_decision : param_decision list Code_id.Map.t
   }
 
+let freshen_decisions = function
+  | Delete -> Delete
+  | Keep (v, kind) -> Keep (Variable.rename v, kind)
+  | Unbox fields -> Unbox (
+      Field.Map.map (
+        Dep_solver.map_unboxed_fields (fun v -> Variable.rename v))
+        fields)
+
 let is_used (env : env) cn = Hashtbl.mem env.uses.uses cn
 
 let is_code_id_used (env : env) code_id =
@@ -437,13 +445,17 @@ type change_calling_convention =
 let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
     (rev_expr : rev_expr) : RE.t =
   let { expr; holed_expr } = rev_expr in
-  let expr, free_names =
+  let expr =
     match expr with
     | Invalid { message } ->
-      Expr.create_invalid (Message message), Name_occurrences.empty
+      RE.from_expr ~expr:
+        (Expr.create_invalid (Message message))
+        ~free_names:Name_occurrences.empty
     | Apply_cont ac ->
       let ac = rewrite_apply_cont_expr kinds env ac in
-      Expr.create_apply_cont ac, Apply_cont_expr.free_names ac
+      let expr = Expr.create_apply_cont ac in
+      let free_names = Apply_cont_expr.free_names ac in
+      RE.from_expr ~expr ~free_names
     | Switch switch ->
       let switch =
         Switch_expr.create
@@ -456,7 +468,9 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
                (rewrite_apply_cont_expr kinds env)
                (Switch_expr.arms switch))
       in
-      Expr.create_switch switch, Switch_expr.free_names switch
+      let expr = Expr.create_switch switch in
+      let free_names = Switch_expr.free_names switch in
+      RE.from_expr ~expr ~free_names
     | Apply apply -> (
       (* CR ncourant: we never rewrite alloc_mode. This is currently ok because
          we never remove begin- or end-region primitives, but might be needed
@@ -542,7 +556,9 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
             ~probe:(Apply.probe apply) ~position:(Apply.position apply)
             ~relative_history:(Apply.relative_history apply)
         in
-        Expr.create_apply apply, Apply.free_names apply
+        let expr = Expr.create_apply apply in
+        let free_names = Apply.free_names apply in
+        RE.from_expr ~expr ~free_names
       | Changing_calling_convention code_id ->
         (* TODO unbox other args fields *)
 
@@ -591,22 +607,80 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
           in
           Flambda_arity.create [Unboxed_product components]
         in
+        let return_decisions =
+          (Code_id.Map.find code_id env.function_return_decision)
+        in
         let return_arity =
           Flambda_arity.unarize_t
-            (get_arity (Code_id.Map.find code_id env.function_return_decision))
+            (get_arity return_decisions)
         in
         let args = List.map fst args in
-        let apply =
-          Apply.create ~callee ~continuation:(Apply.continuation apply)
+        let make_apply ~continuation =
+          Apply.create ~callee ~continuation
             exn_continuation ~args ~args_arity ~return_arity ~call_kind
             (Apply.dbg apply) ~inlined:(Apply.inlined apply)
             ~inlining_state:(Apply.inlining_state apply)
             ~probe:(Apply.probe apply) ~position:(Apply.position apply)
             ~relative_history:(Apply.relative_history apply)
         in
-        Expr.create_apply apply, Apply.free_names apply)
+          match Apply.continuation apply with
+          | Never_returns ->
+              let apply = make_apply ~continuation:Never_returns in
+              RE.from_expr ~expr:(Expr.create_apply apply) ~free_names:(Apply.free_names apply)
+          | Return return_cont ->
+              let return_decisions =
+                List.map freshen_decisions return_decisions
+              in
+              let apply_decisions =
+                Continuation.Map.find return_cont env.cont_params_to_keep
+              in
+              let return_cont_wrapper =
+                Continuation.rename return_cont
+              in
+              let apply =
+                make_apply ~continuation:(Return return_cont_wrapper)
+              in
+              let apply_expr = Expr.create_apply apply in
+              let cont_handler =
+                let return_parameters =
+                  get_parameters return_decisions
+                in
+                let handler =
+                  let rev_args =
+                    List.fold_left2 (fun rev_args apply_decision func_decision ->
+                        match apply_decision, func_decision with
+                        | Unbox _, (Keep _ | Delete) | (Keep _ | Delete), Unbox _ ->
+                            assert false
+                        | Delete, _ ->
+                            rev_args
+                        | Keep (_, _), Keep (v, _) ->
+                            Simple.var v :: rev_args
+                        | Keep (_, kind), Delete ->
+                            poison (Flambda_kind.With_subkind.kind kind) :: rev_args
+                        | Unbox fields_apply, Unbox fields_func ->
+                            fold2_unboxed_subset_with_kind (fun _kind _var_apply var_func rev_args ->
+                                Simple.var var_func :: rev_args
+                              ) fields_apply fields_func args
+                      ) []
+                      apply_decisions
+                      return_decisions
+                  in
+                  let args = List.rev rev_args in
+                  let apply_cont =
+                    Apply_cont_expr.create return_cont ~args ~dbg:Debuginfo.none
+                  in
+                  RE.from_expr ~expr:(Expr.create_apply_cont apply_cont) ~free_names:(Apply_cont_expr.free_names apply_cont)
+                in
+
+                RE.create_continuation_handler
+                  (Bound_parameters.create return_parameters)
+                  ~handler ~is_exn_handler:false
+                  ~is_cold:false (* TODO: take the one from the original return cont *)
+              in
+              let body = RE.from_expr ~expr:apply_expr ~free_names:(Apply.free_names apply) in
+              RE.create_non_recursive_let_cont return_cont_wrapper cont_handler ~body)
   in
-  rebuild_holed kinds env holed_expr (RE.from_expr ~expr ~free_names)
+  rebuild_holed kinds env holed_expr expr
 
 and rebuild_function_params_and_body (kinds : Flambda_kind.t Name.Map.t)
     (env : env) code_metadata (params_and_body : rev_params_and_body) =
