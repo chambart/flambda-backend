@@ -495,6 +495,19 @@ and rebuild_function_params_and_body (kinds : Flambda_kind.t Name.Map.t)
       } =
     params_and_body
   in
+  let params =
+    match Code_id_or_name.Map.find_opt (Code_id_or_name.var my_closure) env.uses.unboxed_fields with
+    | None -> params
+    | Some fields ->
+        Format.printf "@.@.UNBOXABLE CLOSURE %a@.@." Variable.print params_and_body.my_closure;
+        let new_params =
+          fold_unboxed_with_kind (fun kind v acc ->
+              Bound_parameter.create v (Flambda_kind.With_subkind.anything kind) :: acc)
+            fields []
+        in
+        Bound_parameters.append params
+          (Bound_parameters.create new_params)
+  in
   let body = rebuild_expr kinds env body in
   (* assert (List.exists Fun.id (Continuation.Map.find return_continuation
      env.cont_params_to_keep)); *)
