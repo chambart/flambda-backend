@@ -533,17 +533,37 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
             in
             let bound_and_group =
               List.filter_map
-                (fun ((p, e) : Bound_static.Pattern.t * _) ->
+                (fun ((p, e) as arg : Bound_static.Pattern.t * _) ->
                   match p with
                   | Code code_id ->
                     if is_code_id_used env code_id
-                    then begin match e with
-                      | Code
-                          { params_and_body;
-                            code_metadata;
-                            free_names_of_params_and_body
-                          }
-                        -> (
+                    then Some arg
+                    else (
+                      (match e with
+                      | Code _ -> ()
+                      | Deleted_code -> ()
+                      | Static_const _ ->
+                        (* Pattern is [Code _], so can't bind static const *)
+                        assert false);
+                      Some (p, Deleted_code))
+                  | Block_like sym ->
+                    if is_symbol_used env sym then Some arg else None
+                  | Set_of_closures m ->
+                    if Function_slot.Lmap.exists
+                         (fun _ sym -> is_symbol_used env sym)
+                         m
+                    then Some arg
+                    else None)
+                (List.combine (Bound_static.to_list bound_static) group)
+            in
+            let bound_static, group = List.split bound_and_group in
+            let static_const_or_code = function
+              | Deleted_code -> Static_const_or_code.deleted_code
+              | Code
+                  { params_and_body;
+                    code_metadata;
+                    free_names_of_params_and_body
+                  } ->
                 let is_my_closure_used =
                   is_var_used env params_and_body.my_closure
                 in
@@ -564,49 +584,12 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                     ~free_names_of_params_and_body
                 in
                 all_code := Code_id.Map.add (Code.code_id code) code !all_code;
-                Some (p, Static_const_or_code.create_code code)
-              )
-                      | Deleted_code ->
-                        Some (p, Static_const_or_code.deleted_code)
-                      | Static_const _ ->
-                        (* Pattern is [Code _], so can't bind static const *)
-                        assert false
-                    end
-                    else (
-                      (match e with
-                      | Code _ -> ()
-                      | Deleted_code -> ()
-                      | Static_const _ ->
-                        (* Pattern is [Code _], so can't bind static const *)
-                        assert false);
-                      Some (p, Static_const_or_code.deleted_code))
-                  | Block_like sym ->
-                    let static_const =
-                      match e with
-                      | Code _
-                      | Deleted_code -> assert false
-                      | Static_const static_const -> static_const
-                        (* Pattern is [Block_like _], so can't bind code *)
-                    in
-                    if is_symbol_used env sym then Some (p, Static_const_or_code.create_static_const static_const) else None
-                  | Set_of_closures m ->
-                    let static_const =
-                      match e with
-                      | Code _
-                      | Deleted_code -> assert false
-                      | Static_const static_const -> static_const
-                        (* Pattern is [Set_of_closures _], so can't bind code *)
-                    in
-                    if Function_slot.Lmap.exists
-                         (fun _ sym -> is_symbol_used env sym)
-                         m
-                    then Some (p, Static_const_or_code.create_static_const static_const)
-                    else None)
-                (List.combine (Bound_static.to_list bound_static) group)
+                Static_const_or_code.create_code code
+              | Static_const static_const ->
+                Static_const_or_code.create_static_const static_const
             in
-            let bound_static, group = List.split bound_and_group in
             let group =
-              Static_const_group.create group
+              Static_const_group.create (List.map static_const_or_code group)
             in
             ( Bound_pattern.static (Bound_static.create bound_static),
               Named.create_static_consts group )
