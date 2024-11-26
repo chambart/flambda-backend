@@ -420,16 +420,56 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
         in
         Exn_continuation.create ~exn_handler ~extra_args
       in
+      let args, args_arity, callee =
+          (* TODO unbox other args fields *)
+
+          (* List.concat_map (fun simple -> *)
+          (*     if simple_in_unboxable env simple then *)
+          (*       let fields = get_simple_unboxable env simple in *)
+          (*       fold_unboxed_with_kind (fun _kind v acc -> *)
+          (*         Simple.var v :: acc) *)
+          (*         fields [] *)
+          (*     else *)
+          (*       [rewrite_simple kinds env simple] *)
+          (*   ) (Apply.args apply) *)
+          match Apply.callee apply with
+          | Some callee when simple_in_unboxable env callee ->
+              let fields = get_simple_unboxable env callee in
+              let new_args =
+                fold_unboxed_with_kind (fun kind v acc ->
+                    (kind, Simple.var v) :: acc)
+                  fields []
+              in
+              let args =
+                (List.map (rewrite_simple kinds env) (Apply.args apply)) @
+                (List.map snd new_args)
+              in
+              let arity =
+                let added_kinds =
+                  List.map (fun (kind, _) -> Flambda_kind.With_subkind.anything kind) new_args
+                in
+                let kinds = Flambda_arity.unarize (Apply.args_arity apply) @ added_kinds in
+                let components =
+                  List.map (fun k -> Flambda_arity.Component_for_creation.Singleton k) kinds
+                in
+                Flambda_arity.create [Unboxed_product components]
+              in
+              args, arity, None
+          | None | Some _ ->
+              Apply.args apply,
+              Apply.args_arity apply,
+              rewrite_simple_opt env (Apply.callee apply)
+      in
       let apply =
         Apply.create
         (* Note here that callee is rewritten with [rewrite_simple_opt], which
            will put [None] as the callee instead of a dummy value, as a dummy
            value would then be further used in a later simplify pass to refine
            the call kind and produce an invalid. *)
-          ~callee:(rewrite_simple_opt env (Apply.callee apply))
+          ~callee
           ~continuation:(Apply.continuation apply) exn_continuation
-          ~args:(List.map (rewrite_simple kinds env) (Apply.args apply))
-          ~args_arity:(Apply.args_arity apply)
+          ~args
+          ~args_arity
           ~return_arity:(Apply.return_arity apply) ~call_kind (Apply.dbg apply)
           ~inlined:(Apply.inlined apply)
           ~inlining_state:(Apply.inlining_state apply)
@@ -818,6 +858,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
     in
     rebuild_holed kinds env parent let_cont_expr
   | Let_cont_rec { parent; handlers; invariant_params } ->
+    (* TODO unboxed parameters *)
     let filter_params cont params =
       Bound_parameters.create
         (List.filter
