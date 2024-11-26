@@ -30,7 +30,9 @@ type env =
   { uses : Dep_solver.result;
     get_code_metadata : Code_id.t -> Code_metadata.t;
     cont_params_to_keep : bool list Continuation.Map.t;
-    should_keep_param : Continuation.t -> Variable.t -> bool
+    should_keep_param : Continuation.t -> Variable.t -> bool;
+    function_params_to_keep : bool list Code_id.Map.t;
+    should_keep_function_param : Code_id.t -> Variable.t -> bool;
   }
 
 let is_used (env : env) cn = Hashtbl.mem env.uses.uses cn
@@ -899,6 +901,40 @@ let rebuild
     get_code_metadata holed =
   all_slot_offsets := Slot_offsets.empty;
   all_code := Code_id.Map.empty;
+
+  let function_to_unbox code_id (code_dep : Traverse_acc.code_dep) =
+    match Code_id_or_name.Map.find_opt
+            (Code_id_or_name.var code_dep.my_closure)
+            solved_dep.unboxed_fields
+    with
+    | None -> ()
+    | Some _ ->
+        Format.eprintf "@.@.XXXX CLOSURE Unbox %a@.@." Code_id.print code_id
+  in
+  Code_id.Map.iter function_to_unbox code_deps;
+
+  let should_keep_function_param (code_dep : Traverse_acc.code_dep) =
+    match Code_id_or_name.Map.find_opt
+      (Code_id_or_name.var code_dep.my_closure)
+      solved_dep.unboxed_fields
+    with
+    | None -> (fun _ -> true)
+    | Some _ ->
+      fun param ->
+      let is_var_used = Hashtbl.mem solved_dep.uses (Code_id_or_name.var param) in
+      is_var_used
+  in
+  let function_params_to_keep =
+    Code_id.Map.map (fun (code_dep : Traverse_acc.code_dep) ->
+        List.map (should_keep_function_param code_dep) code_dep.params)
+      code_deps
+  in
+  let should_keep_function_param code_id =
+    match Code_id.Map.find_opt code_id code_deps with
+    | None -> (fun _ -> true)
+    | Some code_dep -> should_keep_function_param code_dep
+  in
+
   let should_keep_param cont param =
     let keep_all_parameters =
       Continuation.Set.mem cont fixed_arity_continuations
@@ -921,7 +957,9 @@ let rebuild
     { uses = solved_dep;
       get_code_metadata;
       cont_params_to_keep;
-      should_keep_param
+      should_keep_param;
+      function_params_to_keep;
+      should_keep_function_param;
     }
   in
   let rebuilt_expr =
