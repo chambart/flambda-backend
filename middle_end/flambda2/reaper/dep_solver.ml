@@ -647,6 +647,23 @@ let rec pp_unboxed_elt pp_unboxed ppf = function
 
 type assigned = Variable.t unboxed_fields Field.Map.t Code_id_or_name.Map.t
 
+type changed_representation =
+  | Block_representation of
+      (int * Flambda_primitive.Block_access_kind.t) unboxed_fields Field.Map.t * int
+  | Closure_representation of
+      Value_slot.t unboxed_fields Field.Map.t * Function_slot.t
+
+let pp_changed_representation ff = function
+  | Block_representation (fields, size) ->
+      Format.fprintf ff
+        "(fields %a) (size %d)"
+        (Field.Map.print (pp_unboxed_elt (fun ff (field, _) -> Format.pp_print_int ff field))) fields size
+  | Closure_representation (fields, function_slot) ->
+      Format.fprintf ff
+        "(fields %a) (function_slot %a)"
+        (Field.Map.print (pp_unboxed_elt Value_slot.print)) fields
+        Function_slot.print function_slot
+
 type result =
   { uses : use_result;
     aliases : alias_result;
@@ -655,7 +672,7 @@ type result =
     (* CR: [(Field.t, Constant.t) Either.t unboxed_fields Code_id_or_name.Map.t]
        ? *)
     changed_representation :
-      Field.t unboxed_fields Field.Map.t Code_id_or_name.Map.t
+      changed_representation Code_id_or_name.Map.t
   }
 
 let pp_result ppf (res : use_result) =
@@ -969,10 +986,11 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
       let r = ref ~-1 in
       let mk_field () =
         incr r;
-        Field.Block (!r, Flambda_kind.value)
+        (!r, 
+         Flambda_primitive.(Block_access_kind.Values { tag = Unknown; size = Unknown; field_kind = Block_access_field_kind.Any_value }))
       in
       let repr =
-        let rec repr_elt = function
+        let rec repr_elt mk_field = function
           | Top ->
             Misc.fatal_errorf "Cannot change representation of Top for %a"
               Code_id_or_name.print code_id_or_name
@@ -999,7 +1017,7 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
                           | Some elt -> Graph.join_elt acc elt)
                         flow_to Bottom
                     in
-                    Unboxed (repr_elt elt)
+                    Unboxed (repr_elt mk_field elt)
                   else if Code_id_or_name.Set.exists has_to_be_unboxed flow_to
                   then
                     Misc.fatal_errorf
@@ -1009,7 +1027,15 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
                   else Not_unboxed (mk_field ()))
               fields
         in
-        repr_elt uses
+        if match uses with
+          | Bottom -> true | Top -> assert false
+          | Fields { fields; _ } ->
+              not (Field.Map.mem Code_of_closure fields)
+        then
+        let repr = repr_elt mk_field uses in
+        Block_representation (repr, !r + 1)
+        else
+          assert false
       in
       Code_id_or_name.Set.iter
         (fun c ->
@@ -1018,7 +1044,7 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
         (Code_id_or_name.Map.find code_id_or_name dominated_by_allocation_points))
     to_change_representation;
   Format.eprintf "@.TO_CHG: %a@."
-    (Code_id_or_name.Map.print (Field.Map.print (pp_unboxed_elt Field.print)))
+    (Code_id_or_name.Map.print pp_changed_representation)
     !changed_representation;
   { uses = result;
     aliases;

@@ -961,37 +961,39 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                 let arg =
                   Code_id_or_name.Map.find arg env.uses.changed_representation
                 in
-                let arg = Field.Map.find field arg in
+                match arg with
+                | Block_representation (arg_fields, _size) ->
+                let arg = Field.Map.find field arg_fields in
                 fold2_unboxed_subset
-                  (fun var located_in hole ->
+                  (fun var (field, kind) hole ->
                     let bp =
                       Bound_pattern.singleton
                         (Bound_var.create var Name_mode.normal)
                     in
                     let named =
-                      match (located_in : Field.t) with
-                      | Block (i, _kind) ->
                         Named.create_prim
                           (Flambda_primitive.Unary
                              ( Block_load
-                                 { field = Targetint_31_63.of_int i;
-                                   kind =
-                                     Flambda_primitive.Block_access_kind.Values
-                                       { tag = Unknown;
-                                         size = Unknown;
-                                         field_kind =
-                                           Flambda_primitive
-                                           .Block_access_field_kind
-                                           .Any_value
-                                       };
+                                 { field = Targetint_31_63.of_int field;
+                                   kind;
                                    mut = Immutable
                                  },
                                oarg ))
                           dbg
-                      | Value_slot _ -> failwith "todo"
-                      | Function_slot _ -> failwith "todo"
-                      | Is_int | Get_tag | Code_of_closure | Apply _ ->
-                        failwith "todo"
+                    in
+                    RE.create_let bp named ~body:hole)
+                  (Dep_solver.Unboxed to_bind) arg hole
+                | Closure_representation (arg_fields, function_slot) ->
+                let arg = Field.Map.find field arg_fields in
+                fold2_unboxed_subset
+                  (fun var value_slot hole ->
+                    let bp =
+                      Bound_pattern.singleton
+                        (Bound_var.create var Name_mode.normal)
+                    in
+                    let named =
+                          Named.create_prim
+                            (Flambda_primitive.Unary (Project_value_slot { value_slot; project_from = function_slot }, oarg)) dbg
                     in
                     RE.create_let bp named ~body:hole)
                   (Dep_solver.Unboxed to_bind) arg hole
@@ -1079,6 +1081,7 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                   (Code_id_or_name.var (Bound_var.var bv))
                   env.uses.changed_representation
               in
+              let fields, size = match fields with Block_representation (fields, size) -> fields, size | Closure_representation _ -> assert false in
               let mp =
                 Field.Map.fold
                   (fun f uf mp ->
@@ -1088,15 +1091,15 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                       if simple_is_unboxable env arg
                       then
                         fold2_unboxed_subset
-                          (fun ff var mp ->
-                            Field.Map.add ff (Simple.var var) mp)
+                          (fun (ff, _) var mp ->
+                            Numeric_types.Int.Map.add ff (Simple.var var) mp)
                           uf
                           (Dep_solver.Unboxed (get_simple_unboxable env arg))
                           mp
                       else
                         match uf with
-                        | Dep_solver.Not_unboxed ff ->
-                          Field.Map.add ff (rewrite_simple kinds env arg) mp
+                        | Dep_solver.Not_unboxed (ff, _) ->
+                          Numeric_types.Int.Map.add ff (rewrite_simple kinds env arg) mp
                         | Dep_solver.Unboxed _ ->
                           Misc.fatal_errorf "trying to unbox simple")
                     | Get_tag -> failwith "todo"
@@ -1104,24 +1107,12 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                     | Value_slot _ | Function_slot _ | Code_of_closure | Apply _
                       ->
                       assert false)
-                  fields Field.Map.empty
+                  fields Numeric_types.Int.Map.empty
               in
-              let mx = ref 0 in
-              Field.Map.iter
-                (fun field _ ->
-                  match field with
-                  | Block (i, kind) ->
-                    assert (Flambda_kind.equal kind Flambda_kind.value);
-                    mx := max !mx (i + 1)
-                  | Get_tag | Is_int | Value_slot _ | Function_slot _
-                  | Code_of_closure | Apply _ ->
-                    assert false)
-                mp;
               let args =
-                List.init !mx (fun i ->
+                List.init size (fun i ->
                     match
-                      Field.Map.find_opt
-                        (Field.Block (i, Flambda_kind.value))
+                      Numeric_types.Int.Map.find_opt i
                         mp
                     with
                     | None -> Simple.const_zero

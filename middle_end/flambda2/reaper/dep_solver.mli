@@ -51,13 +51,19 @@ type 'a unboxed_fields =
 type assigned =
   Variable.t unboxed_fields Global_flow_graph.Field.Map.t Code_id_or_name.Map.t
 
+type changed_representation =
+  | Block_representation of
+      (int * Flambda_primitive.Block_access_kind.t) unboxed_fields Global_flow_graph.Field.Map.t * int
+  | Closure_representation of
+      Value_slot.t unboxed_fields Global_flow_graph.Field.Map.t * Function_slot.t
+
 type result =
   { uses : use_result;
     aliases : alias_result;
     dual_graph : Global_flow_graph.Dual.graph;
     unboxed_fields : assigned;
     changed_representation :
-      Global_flow_graph.Field.t unboxed_fields Global_flow_graph.Field.Map.t
+      changed_representation
       Code_id_or_name.Map.t
   }
 
