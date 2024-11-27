@@ -1189,7 +1189,11 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
                   fields Value_slot.Map.empty
               in
           let _, code_id = Function_slot.Lmap.get_singleton_exn (Function_declarations.funs_in_order fundecls) in 
-              RE.create_let bp (Named.create_set_of_closures (Set_of_closures.create alloc_mode (Function_declarations.create (Function_slot.Lmap.singleton function_slot code_id )) ~value_slots:mp)) ~body:hole
+              let set_of_closures = (Set_of_closures.create alloc_mode (Function_declarations.create (Function_slot.Lmap.singleton function_slot code_id )) ~value_slots:mp) in
+            all_slot_offsets
+              := Slot_offsets.add_set_of_closures !all_slot_offsets ~is_phantom:false
+                   set_of_closures;
+              RE.create_let bp (Named.create_set_of_closures set_of_closures) ~body:hole
           | _ ->
             let defining_expr = rewrite_named kinds env defining_expr in
             RE.create_let bp defining_expr ~body:hole
