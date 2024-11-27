@@ -1136,6 +1136,60 @@ and rebuild_holed (kinds : Flambda_kind.t Name.Map.t) (env : env)
             | _ ->
               let defining_expr = rewrite_named kinds env defining_expr in
               RE.create_let bp defining_expr ~body:hole)
+          | Bound_pattern.Set_of_closures bvs
+            when List.exists
+                   (fun bv ->
+                     Code_id_or_name.Map.mem
+                       (Code_id_or_name.var (Bound_var.var bv))
+                       env.uses.changed_representation)
+                   bvs ->
+            (* TODO: handle the case with more than 1 closure + merge with unbox as we can sometimes unbox some but not all *)
+            assert (List.compare_length_with bvs 1 = 0);
+            let bv = List.hd bvs in
+            let repr = Code_id_or_name.Map.find (Code_id_or_name.var (Bound_var.var bv)) env.uses.changed_representation in
+            let fields, function_slot =
+              match repr with
+              | Block_representation _ -> assert false
+              | Closure_representation (fields, function_slot) -> fields, function_slot
+            in
+                let alloc_mode, value_slots, fundecls =
+                  match let_.defining_expr with
+                  | Named (Set_of_closures _set) ->
+                    (* Possible ? *)
+                    assert false
+                    (* Set_of_closures.value_slots set *)
+                  | Set_of_closures set -> set.alloc_mode, set.value_slots, set.function_decls
+                  | _ -> assert false
+                in
+
+              let mp =
+                Field.Map.fold
+                  (fun f uf mp ->
+                    match (f : Field.t) with
+                      | Is_int | Get_tag | Block _ -> assert false
+                      | Code_of_closure | Apply _ -> assert false
+                      | Function_slot _ -> failwith "todo"
+                      | Value_slot value_slot ->
+                      let arg = Value_slot.Map.find value_slot value_slots in
+                      if simple_is_unboxable env arg
+                      then
+                        fold2_unboxed_subset
+                          (fun ff var mp ->
+                            Value_slot.Map.add ff (Simple.var var) mp)
+                          uf
+                          (Dep_solver.Unboxed (get_simple_unboxable env arg))
+                          mp
+                      else
+                        match uf with
+                        | Dep_solver.Not_unboxed ff ->
+                          Value_slot.Map.add ff (rewrite_simple kinds env arg) mp
+                        | Dep_solver.Unboxed _ ->
+                          Misc.fatal_errorf "trying to unbox simple")
+                      
+                  fields Value_slot.Map.empty
+              in
+          let _, code_id = Function_slot.Lmap.get_singleton_exn (Function_declarations.funs_in_order fundecls) in 
+              RE.create_let bp (Named.create_set_of_closures (Set_of_closures.create alloc_mode (Function_declarations.create (Function_slot.Lmap.singleton function_slot code_id )) ~value_slots:mp)) ~body:hole
           | _ ->
             let defining_expr = rewrite_named kinds env defining_expr in
             RE.create_let bp defining_expr ~body:hole

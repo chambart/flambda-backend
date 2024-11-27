@@ -997,9 +997,12 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
           | Bottom -> Field.Map.empty
           | Fields { fields; _ } ->
             (* TODO handle closures & non-value fields *)
-            Field.Map.mapi
+            Field.Map.filter_map
               (fun field field_elt ->
-                match field_elt with
+                 match field with
+                 | Code_of_closure | Apply _ -> None
+                 | Get_tag | Is_int | Block _ | Value_slot _ | Function_slot _ ->
+                Some (match field_elt with
                 | Field_top -> Not_unboxed (mk_field ())
                 | Field_vals flow_to ->
                   if Code_id_or_name.Set.is_empty flow_to
@@ -1024,18 +1027,24 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
                       "Field %a of %a flows to both unboxed and non-unboxed \
                        variables"
                       Field.print field Code_id_or_name.print code_id_or_name
-                  else Not_unboxed (mk_field ()))
+                  else Not_unboxed (mk_field ())))
               fields
         in
         if match uses with
           | Bottom -> true | Top -> assert false
           | Fields { fields; _ } ->
-              not (Field.Map.mem Code_of_closure fields)
+              not (Field.Map.exists (fun field _ -> match field with Block _ | Is_int | Get_tag -> false | Code_of_closure | Apply _ | Value_slot _ | Function_slot _ -> true) fields)
         then
         let repr = repr_elt mk_field uses in
         Block_representation (repr, !r + 1)
         else
-          assert false
+          let mk_field () =
+            Value_slot.create (Compilation_unit.get_current_exn ())
+              ~name:"unboxed_value_slot" Flambda_kind.With_subkind.any_value (* TODO *) 
+          in
+          let repr = repr_elt mk_field uses in
+          Closure_representation (repr,
+                                  Function_slot.create (Compilation_unit.get_current_exn ()) ~name:"unboxed_function_slot" Flambda_kind.With_subkind.any_value)
       in
       Code_id_or_name.Set.iter
         (fun c ->
