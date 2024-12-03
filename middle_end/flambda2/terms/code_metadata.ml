@@ -231,6 +231,8 @@ let with_params_arity params_arity t = { t with params_arity }
 
 let with_result_arity result_arity t = { t with result_arity }
 
+let with_is_tupled is_tupled t = { t with is_tupled }
+
 module Option = struct
   include Option
 

@@ -536,83 +536,8 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
         in
         Exn_continuation.create ~exn_handler ~extra_args
       in
-      (* TODO rewrite return arity *)
-      match updating_calling_convention with
-      | Not_changing_calling_convention ->
-        let args = List.map (rewrite_simple kinds env) (Apply.args apply) in
-        let args_arity = Apply.args_arity apply in
-        let return_arity = Apply.return_arity apply in
-        let apply =
-          Apply.create
-          (* Note here that callee is rewritten with [rewrite_simple_opt], which
-             will put [None] as the callee instead of a dummy value, as a dummy
-             value would then be further used in a later simplify pass to refine
-             the call kind and produce an invalid. *)
-            ~callee:(rewrite_simple_opt env (Apply.callee apply))
-            ~continuation:(Apply.continuation apply) exn_continuation ~args
-            ~args_arity ~return_arity ~call_kind (Apply.dbg apply)
-            ~inlined:(Apply.inlined apply)
-            ~inlining_state:(Apply.inlining_state apply)
-            ~probe:(Apply.probe apply) ~position:(Apply.position apply)
-            ~relative_history:(Apply.relative_history apply)
-        in
-        let expr = Expr.create_apply apply in
-        let free_names = Apply.free_names apply in
-        RE.from_expr ~expr ~free_names
-      | Changing_calling_convention code_id ->
-        let args_from_unboxed_callee, callee =
-          match Apply.callee apply with
-          | Some callee when simple_is_unboxable env callee ->
-            let fields = get_simple_unboxable env callee in
-            let new_args =
-              fold_unboxed_with_kind
-                (fun kind v acc ->
-                  (Simple.var v, Flambda_kind.With_subkind.anything kind) :: acc)
-                fields []
-            in
-            new_args, None
-          | (None | Some _) as callee ->
-            ( [],
-              (* Note here that callee is rewritten with [rewrite_simple_opt],
-                 which will put [None] as the callee instead of a dummy value,
-                 as a dummy value would then be further used in a later simplify
-                 pass to refine the call kind and produce an invalid. *)
-              rewrite_simple_opt env callee )
-        in
-        let params_decisions =
-          match Code_id.Map.find_opt code_id env.function_params_to_keep with
-          | None -> assert false
-          | Some p -> p
-        in
-        let args =
-          get_args_with_kinds kinds env params_decisions (Apply.args apply)
-        in
-        let args = args @ args_from_unboxed_callee in
-        let args_arity =
-          let components =
-            List.map
-              (fun (_, k) -> Flambda_arity.Component_for_creation.Singleton k)
-              args
-          in
-          Flambda_arity.create [Unboxed_product components]
-        in
-        let return_decisions =
-          (Code_id.Map.find code_id env.function_return_decision)
-        in
-        let return_arity =
-          Flambda_arity.unarize_t
-            (get_arity return_decisions)
-        in
-        let args = List.map fst args in
-        let make_apply ~continuation =
-          Apply.create ~callee ~continuation
-            exn_continuation ~args ~args_arity ~return_arity ~call_kind
-            (Apply.dbg apply) ~inlined:(Apply.inlined apply)
-            ~inlining_state:(Apply.inlining_state apply)
-            ~probe:(Apply.probe apply) ~position:(Apply.position apply)
-            ~relative_history:(Apply.relative_history apply)
-        in
-          match Apply.continuation apply with
+      let make_apply_wrapper (make_apply : continuation:Apply_expr.Result_continuation.t -> Apply_expr.t) apply_continuation return_decisions =
+                  match (apply_continuation : Apply_expr.Result_continuation.t) with
           | Never_returns ->
               let apply = make_apply ~continuation:Never_returns in
               RE.from_expr ~expr:(Expr.create_apply apply) ~free_names:(Apply.free_names apply)
@@ -669,7 +594,87 @@ let rec rebuild_expr (kinds : Flambda_kind.t Name.Map.t) (env : env)
                   ~is_cold:false (* TODO: take the one from the original return cont *)
               in
               let body = RE.from_expr ~expr:apply_expr ~free_names:(Apply.free_names apply) in
-              RE.create_non_recursive_let_cont return_cont_wrapper cont_handler ~body)
+              RE.create_non_recursive_let_cont return_cont_wrapper cont_handler ~body
+      in
+      (* TODO rewrite return arity *)
+      match updating_calling_convention with
+      | Not_changing_calling_convention ->
+        let args = List.map (rewrite_simple kinds env) (Apply.args apply) in
+        let args_arity = Apply.args_arity apply in
+        let return_arity = Apply.return_arity apply in
+        let make_apply =
+          Apply.create
+          (* Note here that callee is rewritten with [rewrite_simple_opt], which
+             will put [None] as the callee instead of a dummy value, as a dummy
+             value would then be further used in a later simplify pass to refine
+             the call kind and produce an invalid. *)
+            ~callee:(rewrite_simple_opt env (Apply.callee apply))
+            exn_continuation ~args
+            ~args_arity ~return_arity ~call_kind (Apply.dbg apply)
+            ~inlined:(Apply.inlined apply)
+            ~inlining_state:(Apply.inlining_state apply)
+            ~probe:(Apply.probe apply) ~position:(Apply.position apply)
+            ~relative_history:(Apply.relative_history apply)
+        in
+        let func_decisions = List.map (fun kind ->
+            Keep (Variable.create "function_return", kind))
+            (Flambda_arity.unarized_components return_arity)
+        in
+        make_apply_wrapper make_apply (Apply.continuation apply) func_decisions
+      | Changing_calling_convention code_id ->
+        let args_from_unboxed_callee, callee =
+          match Apply.callee apply with
+          | Some callee when simple_is_unboxable env callee ->
+            let fields = get_simple_unboxable env callee in
+            let new_args =
+              fold_unboxed_with_kind
+                (fun kind v acc ->
+                  (Simple.var v, Flambda_kind.With_subkind.anything kind) :: acc)
+                fields []
+            in
+            new_args, None
+          | (None | Some _) as callee ->
+            ( [],
+              (* Note here that callee is rewritten with [rewrite_simple_opt],
+                 which will put [None] as the callee instead of a dummy value,
+                 as a dummy value would then be further used in a later simplify
+                 pass to refine the call kind and produce an invalid. *)
+              rewrite_simple_opt env callee )
+        in
+        let params_decisions =
+          match Code_id.Map.find_opt code_id env.function_params_to_keep with
+          | None -> assert false
+          | Some p -> p
+        in
+        let args =
+          get_args_with_kinds kinds env params_decisions (Apply.args apply)
+        in
+        let args = args @ args_from_unboxed_callee in
+        let args_arity =
+          let components =
+            List.map
+              (fun (_, k) -> Flambda_arity.Component_for_creation.Singleton k)
+              args
+          in
+          Flambda_arity.create [Unboxed_product components]
+        in
+        let return_decisions =
+          (Code_id.Map.find code_id env.function_return_decision)
+        in
+        let return_arity =
+          Flambda_arity.unarize_t
+            (get_arity return_decisions)
+        in
+        let args = List.map fst args in
+        let make_apply ~continuation =
+          Apply.create ~callee ~continuation
+            exn_continuation ~args ~args_arity ~return_arity ~call_kind
+            (Apply.dbg apply) ~inlined:(Apply.inlined apply)
+            ~inlining_state:(Apply.inlining_state apply)
+            ~probe:(Apply.probe apply) ~position:(Apply.position apply)
+            ~relative_history:(Apply.relative_history apply)
+        in
+        make_apply_wrapper make_apply (Apply.continuation apply) return_decisions)
   in
   rebuild_holed kinds env holed_expr expr
 
@@ -720,6 +725,13 @@ and rebuild_function_params_and_body (kinds : Flambda_kind.t Name.Map.t)
     let code_metadata =
       Code_metadata.with_result_arity result_arity code_metadata
     in
+    let params_decision =
+      List.map2 (fun decision param ->
+          match decision with
+          | Delete | Unbox _ -> decision
+          | Keep (_, kind) -> Keep (Bound_parameter.var param, kind)
+        ) params_decision (Bound_parameters.to_list params)
+    in
     let params = Bound_parameters.create (get_parameters params_decision) in
     let params_from_closure, code_metadata =
       match
@@ -750,7 +762,7 @@ and rebuild_function_params_and_body (kinds : Flambda_kind.t Name.Map.t)
       Flambda_arity.create [Unboxed_product components]
     in
     let code_metadata =
-      Code_metadata.with_params_arity params_arity code_metadata
+      Code_metadata.with_is_tupled false (Code_metadata.with_params_arity params_arity code_metadata)
     in
     let body = rebuild_expr kinds env body in
     (* assert (List.exists Fun.id (Continuation.Map.find return_continuation
@@ -1351,7 +1363,7 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
                 let is_var_used =
                   Hashtbl.mem solved_dep.uses (Code_id_or_name.var v)
                 in
-                if is_var_used then Keep (v, kind) else Delete
+                if true || is_var_used then Keep (v, kind) else Delete
               | Some fields -> Unbox fields)
             code_dep.return kinds)
       code_deps

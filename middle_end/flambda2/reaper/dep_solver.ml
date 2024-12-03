@@ -721,14 +721,20 @@ let problematic_uses ~for_destructuring_value elt =
     then Cannot_unbox_due_to_uses
     else No_problem { use_aliases = uses }
 
-let can_change_representation ~for_destructuring_value dual graph allocation_id
+let can_change_representation ~for_destructuring_value dual dual_graph graph allocation_id
     =
   (* The representation can be changed only if we can track its uses. And all
      the use sites can be changed. If a different value where to flow to that
      same use site, it would not be possible to change the representation.
 
      Note: This alias constraint is not a strict requirement, we might lighten
-     that later. *)
+     that later.
+
+     We also add the constraint that for a set of closures to have a changed
+     representation, it must be true of all the closures defined in it,
+     regardless of whether they are actually used. *)
+  (* CR ncourant: we probably want to memoize this function *)
+  let check_single ~for_destructuring_value allocation_id =
   let uses =
     match Hashtbl.find_opt graph allocation_id with
     | None -> Bottom
@@ -749,6 +755,15 @@ let can_change_representation ~for_destructuring_value dual graph allocation_id
     in
     alias_dominated_by_allocation_id allocation_id
     && Code_id_or_name.Set.for_all alias_dominated_by_allocation_id use_aliases
+  in
+  check_single ~for_destructuring_value allocation_id &&
+  List.for_all (fun (edge : Dual_graph.edge) ->
+      match[@ocaml.warning "-4"] edge with
+      | Constructor { target; relation = Function_slot _ } ->
+          check_single ~for_destructuring_value:false target
+      | _ -> true)
+    (match Code_id_or_name.Map.find_opt allocation_id dual_graph with None -> [] | Some l -> l)
+
 
 let map_from_allocation_points_to_dominated dual =
   let map = ref Code_id_or_name.Map.empty in
@@ -782,7 +797,8 @@ let map_unboxed_fields f uf = mapi_unboxed_fields (fun () x -> f x) (fun _ ()
 
 let can_unbox dual dual_graph graph ~dominated_by_allocation_points
     allocation_id =
-  can_change_representation ~for_destructuring_value:true dual graph
+  (* CR ncourant: we probably want to memoize this function *)
+  can_change_representation ~for_destructuring_value:true dual dual_graph graph
     allocation_id
   &&
   let aliases =
@@ -794,7 +810,7 @@ let can_unbox dual dual_graph graph ~dominated_by_allocation_points
   in
   Code_id_or_name.Set.for_all
     (fun alias ->
-      let edges = Code_id_or_name.Map.find alias dual_graph in
+       let edges = match Code_id_or_name.Map.find_opt alias dual_graph with None -> [] | Some l -> l in
       List.for_all
         (fun (edge : Dual_graph.edge) ->
           match edge with
@@ -827,7 +843,7 @@ let can_unbox dual dual_graph graph ~dominated_by_allocation_points
                 unclear
             in
             (not relation_prevents_unboxing)
-            && can_change_representation ~for_destructuring_value:false dual
+            && can_change_representation ~for_destructuring_value:false dual dual_graph
                  graph target)
         edges)
     aliases
@@ -857,7 +873,7 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
   in
   Hashtbl.iter
     (fun code_or_name elt ->
-      if can_change_representation ~for_destructuring_value:true aliases result
+      if can_change_representation ~for_destructuring_value:true aliases dual_graph result
            code_or_name
       then
         let path =
@@ -886,7 +902,7 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
     Hashtbl.fold
       (fun code_or_name _elt to_change_representation ->
         if (not (Code_id_or_name.Set.mem code_or_name to_unbox))
-           && can_change_representation ~for_destructuring_value:false aliases
+           && can_change_representation ~for_destructuring_value:false aliases dual_graph
                 result code_or_name
         then Code_id_or_name.Set.add code_or_name to_change_representation
         else to_change_representation)
@@ -1050,7 +1066,7 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
         (fun c ->
           changed_representation
             := Code_id_or_name.Map.add c repr !changed_representation)
-        (Code_id_or_name.Map.find code_id_or_name dominated_by_allocation_points))
+        (match Code_id_or_name.Map.find_opt code_id_or_name dominated_by_allocation_points with None -> Code_id_or_name.Set.empty (*XXX check this*) | Some s -> s))
     to_change_representation;
   Format.eprintf "@.TO_CHG: %a@."
     (Code_id_or_name.Map.print pp_changed_representation)
@@ -1058,6 +1074,8 @@ let fixpoint (graph_new : Global_flow_graph.graph) =
   { uses = result;
     aliases;
     dual_graph;
-    unboxed_fields = !assigned;
-    changed_representation = !changed_representation
+    (* unboxed_fields = !assigned;
+    changed_representation = !changed_representation *)
+    unboxed_fields = Code_id_or_name.Map.empty ;
+    changed_representation = Code_id_or_name.Map.empty
   }

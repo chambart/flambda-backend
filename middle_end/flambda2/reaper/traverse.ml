@@ -584,7 +584,6 @@ and traverse_apply denv acc apply : rev_expr =
     match Apply.continuation apply with
     | Never_returns -> None
     | Return cont -> (
-      Acc.fixed_arity_continuation acc cont;
       match Continuation.Map.find cont denv.conts with
       | Normal params -> Some params)
   in
