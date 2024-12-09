@@ -1363,6 +1363,7 @@ let rebuild ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
                 let is_var_used =
                   Hashtbl.mem solved_dep.uses (Code_id_or_name.var v)
                 in
+                (* TODO: fix this, needs the mapping between code ids of functions and their return continuations *)
                 if true || is_var_used then Keep (v, kind) else Delete
               | Some fields -> Unbox fields)
             code_dep.return kinds)
