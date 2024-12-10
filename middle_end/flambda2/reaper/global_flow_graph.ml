@@ -249,36 +249,45 @@ let pp_used_graph ppf (graph : graph) =
   in
   Format.fprintf ppf "{ %a }" pp elts
 
+let lst = Hashtbl.create 10
+
+let pp_code_id_or_name ppf (v : Code_id_or_name.t) =
+  Hashtbl.replace lst v ();
+  Format.fprintf ppf "v%d" (v :> int)
+
+let pp_name ppf v =
+  pp_code_id_or_name ppf (Code_id_or_name.name v)
+
 let pp_datalog_dep ppf (from : Code_id_or_name.t) (dep : Dep.t) =
   match[@ocaml.warning "-4"] dep with
   | Alias { target } ->
-      Format.fprintf ppf "alias(v%d, v%d)."
-        (target :> int)
-        (from :> int)
+    Format.fprintf ppf "alias(%a, %a)."
+      pp_name target
+      pp_code_id_or_name from
   | Use { target } ->
-      Format.fprintf ppf "use(v%d, v%d)."
-        (target :> int)
-        (from :> int)
+    Format.fprintf ppf "use(%a, %a)."
+      pp_code_id_or_name target
+      pp_code_id_or_name from
   | Constructor { target; relation } ->
-    Format.fprintf ppf "constructor(v%d, v%d, %a)."
-      (target :> int)
-      (from :> int)
+    Format.fprintf ppf "constructor(%a, %a, %a)."
+      pp_code_id_or_name target
+      pp_code_id_or_name from
       Field.datalog_print relation
   | Accessor { target; relation } ->
-    Format.fprintf ppf "accessor(v%d, v%d, %a)."
-      (target :> int)
-      (from :> int)
+    Format.fprintf ppf "accessor(%a, %a, %a)."
+      pp_name target
+      pp_code_id_or_name from
       Field.datalog_print relation
   | Alias_if_def { target; if_defined } ->
-    Format.fprintf ppf "alias_if_def(v%d, v%d, v%d)."
-      (target :> int)
-      (from :> int)
-      (if_defined :> int)
+    Format.fprintf ppf "alias_if_def(%a, %a, %a)."
+      pp_name target
+      pp_code_id_or_name from
+      pp_code_id_or_name if_defined
   | Propagate { target; source } ->
-    Format.fprintf ppf "propagate(v%d, v%d, v%d)."
-      (target :> int)
-      (from :> int)
-      (source :> int)
+    Format.fprintf ppf "propagate(%a, %a, %a)."
+      pp_name target
+      pp_code_id_or_name from
+      pp_code_id_or_name source
 
 let pp_datalog ppf (graph : graph) =
   Flambda_colours.without_colours ~f:(fun () ->
@@ -287,8 +296,13 @@ let pp_datalog ppf (graph : graph) =
     )
     graph.name_to_dep;
   Hashtbl.iter (fun (used : Code_id_or_name.t) () ->
-    Format.fprintf ppf "used(v%d).@." (used:>int)
-    ) graph.used)
+    Format.fprintf ppf "used(%a).@." pp_code_id_or_name used
+    ) graph.used;
+  Format.fprintf ppf "@.";
+  Hashtbl.iter (fun (v : Code_id_or_name.t) () ->
+      Format.fprintf ppf "%% %a %a@." Code_id_or_name.print v pp_code_id_or_name v
+    ) lst;
+  Format.fprintf ppf "@.")
 
 let create () = { name_to_dep = Hashtbl.create 100; used = Hashtbl.create 100 }
 
