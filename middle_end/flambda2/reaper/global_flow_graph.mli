@@ -83,6 +83,8 @@ type graph =
 
 val pp_used_graph : Format.formatter -> graph -> unit
 
+val pp_datalog : Format.formatter -> graph -> unit
+
 val create : unit -> graph
 
 val inserts : ('a, Dep.Set.t) Hashtbl.t -> 'a -> Dep.Set.t -> unit

@@ -23,6 +23,8 @@ let unit_with_body (unit : Flambda_unit.t) (body : Flambda.Expr.t) =
     ~module_symbol:(Flambda_unit.module_symbol unit)
     ~used_value_slots:(Flambda_unit.used_value_slots unit)
 
+let pp_datalol = Sys.getenv_opt "DATALOL" <> None
+
 let run ~cmx_loader ~all_code (unit : Flambda_unit.t) =
   let debug_print = Flambda_features.dump_reaper () in
   let Traverse.
@@ -37,7 +39,9 @@ let run ~cmx_loader ~all_code (unit : Flambda_unit.t) =
   in
   if debug_print
   then Format.printf "USED %a@." Global_flow_graph.pp_used_graph deps;
+  let t0 = Sys.time () in
   let solved_dep = Dep_solver.fixpoint deps in
+  let t1 = Sys.time () in
   if debug_print
   then (
     Format.printf "RESULT@ %a@." Dep_solver.pp_result solved_dep.uses;
@@ -66,4 +70,21 @@ let run ~cmx_loader ~all_code (unit : Flambda_unit.t) =
       (Exported_code.mark_as_imported
          (Flambda_cmx.get_imported_code cmx_loader ()))
   in
+
+  if pp_datalol then begin
+    let filename =
+      let unit_name =
+        Compilation_unit.name_as_string
+          (Symbol.compilation_unit (Flambda_unit.module_symbol unit))
+      in
+      Printf.sprintf "%s.pl" unit_name
+    in
+    let oc = open_out filename in
+    let out_fmt = Format.formatter_of_out_channel oc in
+    Global_flow_graph.pp_datalog out_fmt deps;
+    Format.fprintf out_fmt "%% TIME: %g@." (t1 -. t0);
+    close_out oc
+  end;
+
+  let _saucisse = "saucisse" in
   unit_with_body unit body, free_names, all_code, slot_offsets

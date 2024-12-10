@@ -13,6 +13,30 @@
 (*                                                                        *)
 (**************************************************************************)
 
+module type AAA = sig
+  val v : string
+end
+module Slot_id(A:AAA)(S : Slot.S) = struct
+  let r = ref S.Map.empty
+  let count = ref 0
+  let get v =
+    let n =
+      try S.Map.find v !r with
+      | Not_found ->
+        incr count;
+        let n = !count in
+        r := S.Map.add v n !r;
+        n
+    in
+    A.v ^ string_of_int n
+
+  let pp ppf v =
+    Format.fprintf ppf "%s" (get v)
+end
+
+module VSlot = Slot_id(struct let v = "vslot" end)(Value_slot)
+module FSlot = Slot_id(struct let v = "fslot" end)(Function_slot)
+
 module Field = struct
   module M = struct
     type return_kind =
@@ -104,6 +128,20 @@ module Field = struct
           i
       | Apply (ep, Exn) ->
         Format.fprintf ppf "Apply (%s, Exn)" (closure_entry_point_to_string ep)
+
+    let datalog_print ppf = function
+      | Block (i, _k) -> Format.fprintf ppf "block_%i" i
+      | Value_slot s -> Format.fprintf ppf "value_slot_%a" VSlot.pp s
+      | Function_slot f -> Format.fprintf ppf "function_slot_%a" FSlot.pp f
+      | Code_of_closure -> Format.fprintf ppf "Code"
+      | Is_int -> Format.fprintf ppf "Is_int"
+      | Get_tag -> Format.fprintf ppf "Get_tag"
+      | Apply (ep, Normal i) ->
+        Format.fprintf ppf "Apply_Normal_%s_%i"
+          (closure_entry_point_to_string ep)
+          i
+      | Apply (ep, Exn) ->
+        Format.fprintf ppf "Apply_Exn_%s" (closure_entry_point_to_string ep)
   end
 
   include M
@@ -210,6 +248,47 @@ let pp_used_graph ppf (graph : graph) =
     Format.pp_print_list ~pp_sep pp ppf l
   in
   Format.fprintf ppf "{ %a }" pp elts
+
+let pp_datalog_dep ppf (from : Code_id_or_name.t) (dep : Dep.t) =
+  match[@ocaml.warning "-4"] dep with
+  | Alias { target } ->
+      Format.fprintf ppf "alias(v%d, v%d)."
+        (target :> int)
+        (from :> int)
+  | Use { target } ->
+      Format.fprintf ppf "use(v%d, v%d)."
+        (target :> int)
+        (from :> int)
+  | Constructor { target; relation } ->
+    Format.fprintf ppf "constructor(v%d, v%d, %a)."
+      (target :> int)
+      (from :> int)
+      Field.datalog_print relation
+  | Accessor { target; relation } ->
+    Format.fprintf ppf "accessor(v%d, v%d, %a)."
+      (target :> int)
+      (from :> int)
+      Field.datalog_print relation
+  | Alias_if_def { target; if_defined } ->
+    Format.fprintf ppf "alias_if_def(v%d, v%d, v%d)."
+      (target :> int)
+      (from :> int)
+      (if_defined :> int)
+  | Propagate { target; source } ->
+    Format.fprintf ppf "propagate(v%d, v%d, v%d)."
+      (target :> int)
+      (from :> int)
+      (source :> int)
+
+let pp_datalog ppf (graph : graph) =
+  Flambda_colours.without_colours ~f:(fun () ->
+  Hashtbl.iter (fun from deps ->
+    Dep.Set.iter (fun d -> pp_datalog_dep ppf from d; Format.fprintf ppf "@.") deps;
+    )
+    graph.name_to_dep;
+  Hashtbl.iter (fun (used : Code_id_or_name.t) () ->
+    Format.fprintf ppf "used(v%d).@." (used:>int)
+    ) graph.used)
 
 let create () = { name_to_dep = Hashtbl.create 100; used = Hashtbl.create 100 }
 
