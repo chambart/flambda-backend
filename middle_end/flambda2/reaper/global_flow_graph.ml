@@ -133,15 +133,15 @@ module Field = struct
       | Block (i, _k) -> Format.fprintf ppf "block_%i" i
       | Value_slot s -> Format.fprintf ppf "value_slot_%a" VSlot.pp s
       | Function_slot f -> Format.fprintf ppf "function_slot_%a" FSlot.pp f
-      | Code_of_closure -> Format.fprintf ppf "Code"
-      | Is_int -> Format.fprintf ppf "Is_int"
-      | Get_tag -> Format.fprintf ppf "Get_tag"
+      | Code_of_closure -> Format.fprintf ppf "code"
+      | Is_int -> Format.fprintf ppf "is_int"
+      | Get_tag -> Format.fprintf ppf "get_tag"
       | Apply (ep, Normal i) ->
-        Format.fprintf ppf "Apply_Normal_%s_%i"
+        Format.fprintf ppf "apply_Normal_%s_%i"
           (closure_entry_point_to_string ep)
           i
       | Apply (ep, Exn) ->
-        Format.fprintf ppf "Apply_Exn_%s" (closure_entry_point_to_string ep)
+        Format.fprintf ppf "apply_Exn_%s" (closure_entry_point_to_string ep)
   end
 
   include M
