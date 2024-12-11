@@ -290,6 +290,7 @@ let pp_datalog_dep ppf (from : Code_id_or_name.t) (dep : Dep.t) =
       pp_code_id_or_name source
 
 let pp_datalog ppf (graph : graph) =
+  Format.pp_set_margin ppf max_int;
   Flambda_colours.without_colours ~f:(fun () ->
   Hashtbl.iter (fun from deps ->
     Dep.Set.iter (fun d -> pp_datalog_dep ppf from d; Format.fprintf ppf "@.") deps;
